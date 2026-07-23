@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import bcrypt from 'bcrypt';
 import { mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -188,6 +189,13 @@ export function initializeDatabase() {
     );
   `);
   migrate();
+
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  if (userCount === 0) {
+    console.log('Auto-seeding default Admin user (PIN: 1234)...');
+    const adminPin = bcrypt.hashSync('1234', 10);
+    db.prepare('INSERT INTO users (name, pin_hash, role, status) VALUES (?, ?, ?, ?)').run('Admin', adminPin, 'admin', 'active');
+  }
 }
 
 export default db;
