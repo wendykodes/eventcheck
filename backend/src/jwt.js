@@ -1,10 +1,17 @@
 import crypto from 'crypto';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, accessSync, constants } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SECRET_FILE = join(__dirname, '..', '.jwt_secret');
+
+let SECRET_FILE;
+try {
+  accessSync('/data', constants.W_OK);
+  SECRET_FILE = '/data/.jwt_secret';
+} catch (e) {
+  SECRET_FILE = join(__dirname, '..', '.jwt_secret');
+}
 
 let SECRET;
 if (process.env.JWT_SECRET) {

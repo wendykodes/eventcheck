@@ -11,9 +11,12 @@ export function requireAuth(req, res, next) {
   if (!payload) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
-  const user = db.prepare('SELECT status, role FROM users WHERE id = ?').get(payload.id);
+  const user = db.prepare('SELECT status, role, current_session_id FROM users WHERE id = ?').get(payload.id);
   if (!user) {
     return res.status(401).json({ error: 'User does not exist' });
+  }
+  if (payload.sessionId && payload.sessionId !== user.current_session_id) {
+    return res.status(401).json({ error: 'Session active on another device. Please log in again.' });
   }
   if (user.status === 'inactive' || user.status === 'suspended') {
     return res.status(403).json({ error: `Account is ${user.status}. Contact an administrator.` });

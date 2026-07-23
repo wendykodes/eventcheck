@@ -30,7 +30,7 @@ router.get('/:event_id', (req, res) => {
       checked_in_attendees: checkedIn.attendees,
       remaining_guests: totalGuests.c - checkedIn.guests,
       remaining_attendees: totalAttendees.c - checkedIn.attendees,
-      completion_pct: totalGuests.c > 0 ? Math.round((checkedIn.guests / totalGuests.c) * 100) : 0
+      completion_pct: totalAttendees.c > 0 ? Math.round((checkedIn.attendees / totalAttendees.c) * 100) : 0
     };
   });
 
@@ -74,7 +74,7 @@ router.get('/:event_id', (req, res) => {
     total_attendees: totalAttendees.c,
     checked_in_guests: totalCheckedIn.guests,
     checked_in_attendees: totalCheckedIn.attendees,
-    attendance_pct: totalGuests.c > 0 ? Math.round((totalCheckedIn.guests / totalGuests.c) * 100) : 0,
+    attendance_pct: totalAttendees.c > 0 ? Math.round((totalCheckedIn.attendees / totalAttendees.c) * 100) : 0,
     activities: activityStats,
     recent_checkins: recentCheckins,
     staff_summary: staffSummary

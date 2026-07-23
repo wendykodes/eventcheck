@@ -75,6 +75,7 @@ function migrate() {
   if (!userCols.includes('last_login')) db.exec('ALTER TABLE users ADD COLUMN last_login TEXT');
   if (!userCols.includes('phone')) db.exec('ALTER TABLE users ADD COLUMN phone TEXT');
   if (!userCols.includes('email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  if (!userCols.includes('current_session_id')) db.exec('ALTER TABLE users ADD COLUMN current_session_id TEXT');
   const eventCols = db.prepare("PRAGMA table_info('events')").all().map(c => c.name);
   if (!eventCols.includes('staff_access_code')) db.exec("ALTER TABLE events ADD COLUMN staff_access_code TEXT");
   if (!eventCols.includes('onboarding_method')) db.exec("ALTER TABLE events ADD COLUMN onboarding_method TEXT NOT NULL DEFAULT 'approval'");
@@ -94,6 +95,7 @@ export function initializeDatabase() {
       last_login TEXT,
       phone TEXT,
       email TEXT,
+      current_session_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );

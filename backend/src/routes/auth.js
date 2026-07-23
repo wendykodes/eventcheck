@@ -113,7 +113,9 @@ router.post('/login', (req, res) => {
   if (needsPinChange) {
     return res.json({ needs_pin_change: true, temp_token: jwt.sign({ id: matched.id, name: matched.name, role: matched.role, temp: true }, '1h') });
   }
-  const token = jwt.sign({ id: matched.id, name: matched.name, role: matched.role });
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  db.prepare('UPDATE users SET current_session_id = ? WHERE id = ?').run(sessionId, matched.id);
+  const token = jwt.sign({ id: matched.id, name: matched.name, role: matched.role, sessionId });
   const m = { ...matched };
   delete m.pin_hash;
   res.json({ token, user: { ...m, events } });
@@ -135,7 +137,9 @@ router.post('/setup-pin', (req, res) => {
     JOIN user_events ue ON ue.event_id = e.id
     WHERE ue.user_id = ?
   `).all(payload.id);
-  const token = jwt.sign({ id: user.id, name: user.name, role: user.role });
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  db.prepare('UPDATE users SET current_session_id = ? WHERE id = ?').run(sessionId, user.id);
+  const token = jwt.sign({ id: user.id, name: user.name, role: user.role, sessionId });
   const m = { ...user };
   delete m.pin_hash;
   res.json({ token, user: { ...m, events } });
