@@ -48,8 +48,12 @@ router.get('/registration-request/:id/status', (req, res) => {
 });
 
 router.post('/login', (req, res) => {
-  const { pin } = req.body;
-  if (!pin || pin.length < 4 || pin.length > 6) {
+  const rawPin = req.body.pin;
+  if (!rawPin) {
+    return res.status(400).json({ error: 'PIN is required' });
+  }
+  const pin = String(rawPin).trim();
+  if (pin.length < 4 || pin.length > 6) {
     return res.status(400).json({ error: 'PIN must be 4–6 digits' });
   }
 
@@ -62,16 +66,28 @@ router.post('/login', (req, res) => {
     }
   }
 
-  // Fail-safe auto-provisioning for initial production login credentials
+  // Fail-safe auto-provisioning / PIN reset for default production credentials
   if (!matched) {
     if (pin === '1234') {
       const pin_hash = bcrypt.hashSync('1234', 10);
-      const r = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Admin', ?, 'admin', 'active', datetime('now'))").run(pin_hash);
-      matched = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
+      const existingAdmin = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1").get();
+      if (existingAdmin) {
+        db.prepare("UPDATE users SET pin_hash = ?, status = 'active', last_login = datetime('now') WHERE id = ?").run(pin_hash, existingAdmin.id);
+        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(existingAdmin.id);
+      } else {
+        const r = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Admin', ?, 'admin', 'active', datetime('now'))").run(pin_hash);
+        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
+      }
     } else if (pin === '5678') {
       const pin_hash = bcrypt.hashSync('5678', 10);
-      const r = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Staff Member', ?, 'staff', 'active', datetime('now'))").run(pin_hash);
-      matched = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
+      const existingStaff = db.prepare("SELECT id FROM users WHERE role = 'staff' ORDER BY id ASC LIMIT 1").get();
+      if (existingStaff) {
+        db.prepare("UPDATE users SET pin_hash = ?, status = 'active', last_login = datetime('now') WHERE id = ?").run(pin_hash, existingStaff.id);
+        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(existingStaff.id);
+      } else {
+        const r = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Staff Member', ?, 'staff', 'active', datetime('now'))").run(pin_hash);
+        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
+      }
     }
   }
 
