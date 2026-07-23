@@ -190,14 +190,51 @@ export function initializeDatabase() {
   `);
   migrate();
 
-  const adminPin = bcrypt.hashSync('1234', 10);
-  const admin = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
-  if (!admin) {
-    console.log('Creating default Admin user (PIN: 1234)...');
-    db.prepare('INSERT INTO users (name, pin_hash, role, status) VALUES (?, ?, ?, ?)').run('Admin', adminPin, 'admin', 'active');
-  } else {
-    console.log('Ensuring Admin user PIN 1234 is active...');
-    db.prepare("UPDATE users SET pin_hash = ?, status = 'active' WHERE id = ?").run(adminPin, admin.id);
+  // Auto-seed if database has no events
+  const eventCount = db.prepare('SELECT COUNT(*) as count FROM events').get().count;
+  if (eventCount === 0) {
+    console.log('Database empty! Auto-seeding sample event, Admin (1234), Staff (5678), and guests...');
+    
+    const adminPin = bcrypt.hashSync('1234', 10);
+    const staffPin = bcrypt.hashSync('5678', 10);
+
+    const adminRes = db.prepare(`
+      INSERT INTO users (name, pin_hash, role, status, last_login)
+      VALUES (?, ?, 'admin', 'active', datetime('now'))
+    `).run('Admin', adminPin);
+
+    const aliceRes = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Alice', ?, 'staff', 'active', datetime('now'))").run(staffPin);
+    const bobRes = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Bob', ?, 'staff', 'active', datetime('now'))").run(staffPin);
+
+    const eventRes = db.prepare(`
+      INSERT INTO events (name, date, venue, description, status, staff_access_code)
+      VALUES ('Smith-Johnson Wedding Reception', '2026-08-15', 'The Grand Ballroom, 123 Main St', 'Evening wedding reception with dinner and dancing', 'active', 'WEDDING2026')
+    `).run();
+    const eventId = eventRes.lastInsertRowid;
+
+    db.prepare('INSERT INTO user_events (user_id, event_id) VALUES (?, ?)').run(aliceRes.lastInsertRowid, eventId);
+    db.prepare('INSERT INTO user_events (user_id, event_id) VALUES (?, ?)').run(bobRes.lastInsertRowid, eventId);
+
+    const activityNames = ['Entrance', 'Food', 'Drinks', 'Cake', 'Gift Collection', 'Photo Booth'];
+    activityNames.forEach((name, i) => {
+      db.prepare('INSERT INTO activities (event_id, name, sort_order) VALUES (?, ?, ?)').run(eventId, name, i);
+    });
+
+    const guests = [
+      { name: 'John Smith', phone: '555-0101', email: 'john@example.com', table: '1', count: 2, category: 'Family' },
+      { name: 'Jane Doe', phone: '555-0102', email: 'jane@example.com', table: '2', count: 1, category: 'Friend' },
+      { name: 'Bob Wilson', phone: '555-0103', email: 'bob@example.com', table: '1', count: 3, category: 'Family' },
+      { name: 'Sarah Johnson', phone: '555-0104', email: 'sarah@example.com', table: '3', count: 2, category: 'Friend' },
+      { name: 'Mike Brown', phone: '555-0105', email: 'mike@example.com', table: '2', count: 1, category: 'Coworker' }
+    ];
+
+    guests.forEach(g => {
+      db.prepare('INSERT INTO guests (event_id, name, phone, email, table_number, guest_count, category) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        eventId, g.name, g.phone, g.email, g.table, g.count, g.category
+      );
+    });
+
+    console.log('Auto-seed completed successfully!');
   }
 }
 
