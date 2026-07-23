@@ -2,6 +2,7 @@
   "name": "event-checkin",
   "private": true,
   "scripts": {
+    "postinstall": "cd backend && npm install",
     "install:all": "cd backend && npm install && cd ../frontend && npm install",
     "dev:backend": "cd backend && node src/index.js",
     "dev:frontend": "cd frontend && npm run dev",
