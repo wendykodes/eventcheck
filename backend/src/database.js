@@ -1,13 +1,23 @@
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
-import { mkdirSync } from 'fs';
+import { mkdirSync, accessSync, constants } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-let dbPath = process.env.DATABASE_PATH || join(__dirname, '..', 'data.db');
+let dbPath = process.env.DATABASE_PATH;
+if (!dbPath) {
+  try {
+    // Check if standard Railway volume directory exists and is writable
+    accessSync('/data', constants.W_OK);
+    dbPath = '/data/data.db';
+    console.log('Using persistent SQLite database at /data/data.db');
+  } catch (e) {
+    dbPath = join(__dirname, '..', 'data.db');
+  }
+}
 
 // Ensure parent directory exists (especially important for mounted volume paths in production)
 try {
