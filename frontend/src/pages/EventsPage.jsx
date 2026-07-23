@@ -182,7 +182,11 @@ export default function EventsPage() {
       ) : (
         <div className="space-y-3">
           {events.map((event, i) => (
-            <div key={event.id} className={`card p-5 animate-slide-up stagger-${Math.min(i+1,6)}`}>
+            <div
+              key={event.id}
+              className={`card p-5 animate-slide-up stagger-${Math.min(i+1,6)}`}
+              style={{ position: 'relative', zIndex: menuOpen === event.id ? 50 : 1 }}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2.5 mb-1">
