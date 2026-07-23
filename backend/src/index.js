@@ -51,14 +51,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const portsToListen = new Set([String(PORT), '3001', '3301']);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server successfully running on 0.0.0.0:${PORT}`);
+});
 
-portsToListen.forEach((p) => {
-  try {
-    app.listen(Number(p), '0.0.0.0', () => {
-      console.log(`Server listening on 0.0.0.0:${p}`);
-    });
-  } catch (err) {
-    // Port already bound or unavailable
-  }
+server.on('error', (err) => {
+  console.error('Server listen error:', err.message);
 });
