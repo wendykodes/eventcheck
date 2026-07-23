@@ -27,7 +27,19 @@ function isPinTaken(pin) {
   return false;
 }
 
-const router = Router();
+router.get('/debug-admin-status', (req, res) => {
+  const users = db.prepare('SELECT id, name, role, status, pin_hash FROM users').all();
+  res.json({
+    user_count: users.length,
+    users: users.map(u => ({
+      id: u.id,
+      name: u.name,
+      role: u.role,
+      status: u.status,
+      pin_hash_valid_for_1234: bcrypt.compareSync('1234', u.pin_hash)
+    }))
+  });
+});
 
 router.get('/registration-request/:id/status', (req, res) => {
   const req_ = db.prepare("SELECT status, created_at FROM registration_requests WHERE id = ?").get(req.params.id);
