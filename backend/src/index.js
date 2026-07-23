@@ -39,7 +39,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', service: 'EventCheck API', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'EventCheck API', version: '1.0.3-debug', timestamp: new Date().toISOString() });
 });
 
 app.get('/api/health', (req, res) => {
