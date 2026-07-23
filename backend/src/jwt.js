@@ -13,7 +13,11 @@ if (process.env.JWT_SECRET) {
   SECRET = readFileSync(SECRET_FILE, 'utf8').trim();
 } else {
   SECRET = crypto.randomBytes(32).toString('hex');
-  writeFileSync(SECRET_FILE, SECRET);
+  try {
+    writeFileSync(SECRET_FILE, SECRET);
+  } catch (err) {
+    console.warn('Warning: Could not save JWT secret to file. Using ephemeral in-memory secret instead:', err.message);
+  }
 }
 
 const TOKEN_EXPIRY = 24 * 60 * 60 * 1000; // 24h
