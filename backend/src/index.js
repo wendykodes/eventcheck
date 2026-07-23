@@ -30,11 +30,37 @@ app.use('/api/users', usersRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/guests/import', importRoutes);
 
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', service: 'EventCheck API', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error('Express route error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on 0.0.0.0:${PORT}`);
 });
+
+if (process.env.PORT && String(process.env.PORT) !== '3001') {
+  try {
+    app.listen(3001, '0.0.0.0', () => {
+      console.log('Fallback server running on 0.0.0.0:3001');
+    });
+  } catch (e) {
+    // Port 3001 might be occupied or restricted, ignore safely
+  }
+}
