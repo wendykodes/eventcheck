@@ -53,6 +53,7 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: 'PIN is required' });
   }
   const pin = String(rawPin).trim();
+  console.log(`[LOGIN ATTEMPT] Received PIN: ${pin}`);
   if (pin.length < 4 || pin.length > 6) {
     return res.status(400).json({ error: 'PIN must be 4–6 digits' });
   }
