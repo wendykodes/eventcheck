@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -6,6 +7,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const dbPath = process.env.DATABASE_PATH || join(__dirname, '..', 'data.db');
+
+// Ensure parent directory exists (especially important for mounted volume paths in production)
+try {
+  mkdirSync(dirname(dbPath), { recursive: true });
+} catch (err) {
+  console.error('Failed to create database directory:', err);
+}
+
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
