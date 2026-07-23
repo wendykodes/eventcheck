@@ -190,11 +190,14 @@ export function initializeDatabase() {
   `);
   migrate();
 
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-  if (userCount === 0) {
-    console.log('Auto-seeding default Admin user (PIN: 1234)...');
-    const adminPin = bcrypt.hashSync('1234', 10);
+  const adminPin = bcrypt.hashSync('1234', 10);
+  const admin = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
+  if (!admin) {
+    console.log('Creating default Admin user (PIN: 1234)...');
     db.prepare('INSERT INTO users (name, pin_hash, role, status) VALUES (?, ?, ?, ?)').run('Admin', adminPin, 'admin', 'active');
+  } else {
+    console.log('Ensuring Admin user PIN 1234 is active...');
+    db.prepare("UPDATE users SET pin_hash = ?, status = 'active' WHERE id = ?").run(adminPin, admin.id);
   }
 }
 
