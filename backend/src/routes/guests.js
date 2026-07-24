@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { formatUgandanPhoneNumber } from '../phoneUtils.js';
 
 const router = Router();
 
@@ -38,15 +39,16 @@ router.get('/:id', (req, res) => {
 
 router.post('/', (req, res) => {
   const { event_id, name, phone, email, table_number, guest_count, category, notes } = req.body;
-  if (!event_id || !name || !phone) {
-    return res.status(400).json({ error: 'event_id, name, and phone are required' });
+  if (!event_id || !name) {
+    return res.status(400).json({ error: 'event_id and name are required' });
   }
+  const formattedPhone = phone ? formatUgandanPhoneNumber(phone) : null;
   const isAdmin = req.user.role === 'admin';
   const status = isAdmin ? 'approved' : 'pending';
   const result = db.prepare(`
     INSERT INTO guests (event_id, name, phone, email, table_number, guest_count, category, notes, status, submitted_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(event_id, name, phone, email || null, table_number || null, guest_count || 1, category || null, notes || null, status, isAdmin ? null : req.user.id);
+  `).run(event_id, name, formattedPhone, email || null, table_number || null, guest_count || 1, category || null, notes || null, status, isAdmin ? null : req.user.id);
   const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(guest);
 });
@@ -70,12 +72,13 @@ router.put('/:id', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM guests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Guest not found' });
   const { name, phone, email, table_number, guest_count, category, notes } = req.body;
+  const formattedPhone = phone !== undefined ? (phone ? formatUgandanPhoneNumber(phone) : null) : existing.phone;
   db.prepare(`
     UPDATE guests SET name=?, phone=?, email=?, table_number=?, guest_count=?, category=?, notes=?, updated_at=datetime('now')
     WHERE id=?
   `).run(
     name ?? existing.name,
-    phone ?? existing.phone,
+    formattedPhone,
     email !== undefined ? email : existing.email,
     table_number !== undefined ? table_number : existing.table_number,
     guest_count ?? existing.guest_count,

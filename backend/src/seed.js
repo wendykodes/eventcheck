@@ -38,32 +38,35 @@ const activityIds = activityNames.map((name, i) => {
   return r.lastInsertRowid;
 });
 
+import { formatUgandanPhoneNumber } from './phoneUtils.js';
+
 const guests = [
-  { name: 'John Smith', phone: '555-0101', email: 'john@example.com', table: '1', count: 2, category: 'Family' },
-  { name: 'Jane Doe', phone: '555-0102', email: 'jane@example.com', table: '2', count: 1, category: 'Friend' },
-  { name: 'Bob Wilson', phone: '555-0103', email: 'bob@example.com', table: '1', count: 3, category: 'Family' },
-  { name: 'Sarah Johnson', phone: '555-0104', email: 'sarah@example.com', table: '3', count: 2, category: 'Friend' },
-  { name: 'Mike Brown', phone: '555-0105', email: 'mike@example.com', table: '2', count: 1, category: 'Coworker' },
-  { name: 'Lisa Davis', phone: '555-0106', email: 'lisa@example.com', table: '3', count: 4, category: 'Family' },
-  { name: 'Tom Miller', phone: '555-0107', email: 'tom@example.com', table: '4', count: 2, category: 'Friend' },
-  { name: 'Amy Garcia', phone: '555-0108', email: 'amy@example.com', table: '4', count: 1, category: 'Coworker' },
-  { name: 'Chris Lee', phone: '555-0109', email: 'chris@example.com', table: '5', count: 3, category: 'Family' },
-  { name: 'Emma Taylor', phone: '555-0110', email: 'emma@example.com', table: '5', count: 2, category: 'Friend' },
-  { name: 'David Clark', phone: '555-0111', email: 'david@example.com', table: '6', count: 1, category: 'Coworker' },
-  { name: 'Rachel White', phone: '555-0112', email: 'rachel@example.com', table: '6', count: 2, category: 'Family' },
-  { name: 'Kevin Martinez', phone: '555-0113', email: 'kevin@example.com', table: '7', count: 1, category: 'Friend' },
-  { name: 'Megan Anderson', phone: '555-0114', email: 'megan@example.com', table: '7', count: 3, category: 'Family' },
-  { name: 'Ryan Thomas', phone: '555-0115', email: 'ryan@example.com', table: '8', count: 2, category: 'Friend' },
-  { name: 'Olivia Jackson', phone: '555-0116', email: 'olivia@example.com', table: '8', count: 1, category: 'Coworker' },
-  { name: 'Jason Moore', phone: '555-0117', email: 'jason@example.com', table: '9', count: 4, category: 'Family' },
-  { name: 'Sophie Harris', phone: '555-0118', email: 'sophie@example.com', table: '9', count: 2, category: 'Friend' },
-  { name: 'Daniel Martin', phone: '555-0119', email: 'daniel@example.com', table: '10', count: 1, category: 'Coworker' },
-  { name: 'Natalie Robinson', phone: '555-0120', email: 'natalie@example.com', table: '10', count: 3, category: 'Family' },
+  { name: 'John Smith', phone: '0772100200', email: 'john@example.com', table: '1', count: 2, category: 'Family' },
+  { name: 'Jane Doe', phone: '0752100201', email: 'jane@example.com', table: '2', count: 1, category: 'Friend' },
+  { name: 'Bob Wilson', phone: '0782100202', email: 'bob@example.com', table: '1', count: 3, category: 'Family' },
+  { name: 'Sarah Johnson', phone: '0702100203', email: 'sarah@example.com', table: '3', count: 2, category: 'Friend' },
+  { name: 'Mike Brown', phone: '0772100204', email: 'mike@example.com', table: '2', count: 1, category: 'Coworker' },
+  { name: 'Lisa Davis', phone: '0752100205', email: 'lisa@example.com', table: '3', count: 4, category: 'Family' },
+  { name: 'Tom Miller', phone: '0782100206', email: 'tom@example.com', table: '4', count: 2, category: 'Friend' },
+  { name: 'Amy Garcia', phone: '0702100207', email: 'amy@example.com', table: '4', count: 1, category: 'Coworker' },
+  { name: 'Chris Lee', phone: '0772100208', email: 'chris@example.com', table: '5', count: 3, category: 'Family' },
+  { name: 'Emma Taylor', phone: '0752100209', email: 'emma@example.com', table: '5', count: 2, category: 'Friend' },
+  { name: 'David Clark', phone: '0782100210', email: 'david@example.com', table: '6', count: 1, category: 'Coworker' },
+  { name: 'Rachel White', phone: '0702100211', email: 'rachel@example.com', table: '6', count: 2, category: 'Family' },
+  { name: 'Kevin Martinez', phone: '0772100212', email: 'kevin@example.com', table: '7', count: 1, category: 'Friend' },
+  { name: 'Megan Anderson', phone: '0752100213', email: 'megan@example.com', table: '7', count: 3, category: 'Family' },
+  { name: 'Ryan Thomas', phone: '0782100214', email: 'ryan@example.com', table: '8', count: 2, category: 'Friend' },
+  { name: 'Olivia Jackson', phone: '0702100215', email: 'olivia@example.com', table: '8', count: 1, category: 'Coworker' },
+  { name: 'Jason Moore', phone: '0772100216', email: 'jason@example.com', table: '9', count: 4, category: 'Family' },
+  { name: 'Sophie Harris', phone: '0752100217', email: 'sophie@example.com', table: '9', count: 2, category: 'Friend' },
+  { name: 'Daniel Martin', phone: '0782100218', email: 'daniel@example.com', table: '10', count: 1, category: 'Coworker' },
+  { name: 'Natalie Robinson', phone: '0702100219', email: 'natalie@example.com', table: '10', count: 3, category: 'Family' },
 ];
 
 const guestIds = guests.map(g => {
+  const formattedPhone = formatUgandanPhoneNumber(g.phone);
   const r = db.prepare('INSERT INTO guests (event_id, name, phone, email, table_number, guest_count, category, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-    eventId, g.name, g.phone, g.email, g.table, g.count, g.category, null
+    eventId, g.name, formattedPhone, g.email, g.table, g.count, g.category, null
   );
   return r.lastInsertRowid;
 });

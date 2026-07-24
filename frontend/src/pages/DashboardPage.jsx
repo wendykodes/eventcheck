@@ -83,10 +83,10 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <StatCard label="Total Guests" value={total_attendees} sub={`${total_guests} parties`} />
-        <StatCard label="Checked In" value={checked_in_attendees} sub={`${checked_in_guests} parties`} accent="#30d158" />
-        <StatCard label="Remaining" value={remaining_attendees} sub={`${remaining_guests} parties`} accent="#ff9f0a" />
-        <StatCard label="Attendance" chart={<DonutChart value={checked_in_attendees} max={total_attendees} size={60} strokeWidth={5} />} sub={`${attendance_pct}%`} />
+        <StatCard label="Total People" value={total_attendees} sub={`${total_guests} invitations`} />
+        <StatCard label="People Checked In" value={checked_in_attendees} sub={`${checked_in_guests} invitations`} accent="#30d158" />
+        <StatCard label="People Left" value={remaining_attendees} sub={`${remaining_guests} invitations`} accent="#ff9f0a" />
+        <StatCard label="Attendance Rate" chart={<DonutChart value={checked_in_attendees} max={total_attendees} size={60} strokeWidth={5} />} sub={`${attendance_pct}%`} />
       </div>
 
       <div>
@@ -115,8 +115,8 @@ export default function DashboardPage() {
                 <span className="text-[12px] text-[var(--color-text-secondary)] font-medium w-12 text-right">{a.completion_pct}%</span>
               </div>
               <div className="flex gap-4 mt-2 text-[12px] text-[var(--color-text-secondary)]">
-                <span>{a.checked_in_guests} parties</span>
-                <span>{a.remaining_guests} remaining parties</span>
+                <span>{a.checked_in_guests} invitations in</span>
+                <span>{a.remaining_guests} invitations left</span>
               </div>
             </div>
           ))}

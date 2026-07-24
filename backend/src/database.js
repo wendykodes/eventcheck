@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { mkdirSync, accessSync, constants } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { formatUgandanPhoneNumber } from './phoneUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -201,6 +202,20 @@ export function initializeDatabase() {
     );
   `);
   migrate();
+
+  // Migrate existing guest phone numbers to Ugandan format if needed
+  try {
+    const unformattedGuests = db.prepare("SELECT id, phone FROM guests WHERE phone IS NOT NULL AND phone != '' AND phone NOT LIKE '+256%'").all();
+    const updatePhoneStmt = db.prepare("UPDATE guests SET phone = ? WHERE id = ?");
+    unformattedGuests.forEach(g => {
+      const formatted = formatUgandanPhoneNumber(g.phone);
+      if (formatted && formatted !== g.phone) {
+        updatePhoneStmt.run(formatted, g.id);
+      }
+    });
+  } catch (e) {
+    console.error('Phone migration notice:', e.message);
+  }
 
   // Auto-seed if database has no events
   const eventCount = db.prepare('SELECT COUNT(*) as count FROM events').get().count;

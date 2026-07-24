@@ -10,8 +10,8 @@ router.get('/:event_id', (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.event_id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  const totalGuests = db.prepare('SELECT COUNT(*) AS c FROM guests WHERE event_id = ?').get(req.params.event_id);
-  const totalAttendees = db.prepare('SELECT COALESCE(SUM(guest_count), 0) AS c FROM guests WHERE event_id = ?').get(req.params.event_id);
+  const totalGuests = db.prepare("SELECT COUNT(*) AS c FROM guests WHERE event_id = ? AND status = 'approved'").get(req.params.event_id);
+  const totalAttendees = db.prepare("SELECT COALESCE(SUM(guest_count), 0) AS c FROM guests WHERE event_id = ? AND status = 'approved'").get(req.params.event_id);
 
   const activities = db.prepare('SELECT * FROM activities WHERE event_id = ? ORDER BY sort_order ASC').all(req.params.event_id);
 
@@ -20,7 +20,7 @@ router.get('/:event_id', (req, res) => {
       SELECT COUNT(*) AS guests, COALESCE(SUM(g.guest_count), 0) AS attendees
       FROM checkins c
       JOIN guests g ON g.id = c.guest_id
-      WHERE c.activity_id = ?
+      WHERE c.activity_id = ? AND g.status = 'approved'
     `).get(a.id);
     return {
       id: a.id,
@@ -44,6 +44,7 @@ router.get('/:event_id', (req, res) => {
         WHERE a.event_id = ?
       ) AS d
       JOIN guests g ON g.id = d.guest_id
+      WHERE g.status = 'approved'
     `).get(req.params.event_id)
     : { guests: 0, attendees: 0 };
 

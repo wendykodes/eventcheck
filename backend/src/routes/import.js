@@ -3,6 +3,7 @@ import XLSX from 'xlsx';
 import crypto from 'crypto';
 import db from '../database.js';
 import { requireAdmin } from '../middleware/auth.js';
+import { formatUgandanPhoneNumber } from '../phoneUtils.js';
 
 const router = Router();
 const importSessions = new Map();
@@ -27,13 +28,82 @@ router.post('/parse', (req, res) => {
     if (!sheetName) return res.status(400).json({ error: 'No sheets found in file' });
 
     const sheet = workbook.Sheets[sheetName];
-    const rawData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    // Read the sheet as a 2D array to find the header row
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-    if (rawData.length === 0) return res.status(400).json({ error: 'No data found in file' });
+    if (rows.length === 0) return res.status(400).json({ error: 'No data found in file' });
 
-    const columns = Object.keys(rawData[0]).filter(k => k.trim());
+    // Keywords to find the header row in the first 15 rows
+    const nameKeywords = ['name', 'guest name', 'fullname', 'full name', 'guest'];
+    const phoneKeywords = ['phone', 'phone number', 'telephone', 'contact', 'mobile', 'tel'];
+
+    let headerRowIdx = 0;
+    let bestScore = -1;
+    for (let r = 0; r < Math.min(15, rows.length); r++) {
+      const row = rows[r];
+      let score = 0;
+      let hasRequiredName = false;
+      let hasRequiredPhone = false;
+      for (const cell of row) {
+        const val = String(cell || '').toLowerCase().trim();
+        if (!val) continue;
+        if (nameKeywords.some(k => val === k || val.includes(k))) { score += 3; hasRequiredName = true; }
+        else if (phoneKeywords.some(k => val === k || val.includes(k))) { score += 3; hasRequiredPhone = true; }
+        else if (['email', 'e-mail', 'email address'].some(k => val === k || val.includes(k))) score += 2;
+        else if (['table', 'table number', 'table no', 'seating'].some(k => val === k || val.includes(k))) score += 1;
+        else if (['count', 'guest count', 'guests', 'no of guests', 'number of guests', 'pax', 'size'].some(k => val === k || val.includes(k))) score += 1;
+        else if (['category', 'group', 'type'].some(k => val === k || val.includes(k))) score += 1;
+        else if (['notes', 'note', 'comments', 'comment', 'description'].some(k => val === k || val.includes(k))) score += 1;
+      }
+      if (hasRequiredName && hasRequiredPhone) {
+        score += 10;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestRowIdx = r;
+      }
+    }
+
+    if (bestScore <= 0) {
+      // Find the first row that is not completely empty
+      for (let r = 0; r < rows.length; r++) {
+        if (rows[r].some(cell => String(cell || '').trim() !== '')) {
+          headerRowIdx = r;
+          break;
+        }
+      }
+    } else {
+      headerRowIdx = bestRowIdx;
+    }
+
+    const headerRow = rows[headerRowIdx];
+    const columns = headerRow.map((cell, colIdx) => {
+      const val = String(cell || '').trim();
+      if (!val) {
+        return `Column_${colIdx + 1}`;
+      }
+      return val;
+    }).filter(k => k);
+
+    const rawData = [];
+    for (let r = headerRowIdx + 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (row.every(cell => String(cell || '').trim() === '')) {
+        continue;
+      }
+      const rowObj = {};
+      headerRow.forEach((colName, colIdx) => {
+        const key = String(colName || '').trim() || `Column_${colIdx + 1}`;
+        rowObj[key] = row[colIdx] !== undefined ? String(row[colIdx]).trim() : '';
+      });
+      rawData.push(rowObj);
+    }
+
+    if (rawData.length === 0) {
+      return res.status(400).json({ error: 'No data rows found below the header row' });
+    }
+
     const sessionId = crypto.randomBytes(16).toString('hex');
-
     importSessions.set(sessionId, {
       rows: rawData,
       columns,
@@ -74,7 +144,6 @@ router.post('/preview', (req, res) => {
   const categoryField = mapping.category;
   const notesField = mapping.notes;
 
-  const phonePattern = /^[\d\s\-\+\(\)\.]+$/;
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const invalidChars = /[<>{}|\\^~`]/;
 
@@ -91,19 +160,26 @@ router.post('/preview', (req, res) => {
     const categoryRaw = (categoryField ? row[categoryField] : '').toString().trim();
     const notesRaw = (notesField ? row[notesField] : '').toString().trim();
 
-    if (!nameRaw || !phoneRaw) {
-      errors.push({ row: rowNum, reason: 'Missing required field: name or phone', data: { name: nameRaw, phone: phoneRaw } });
+    if (!nameRaw) {
+      errors.push({ row: rowNum, reason: 'Missing required field: name', data: { name: nameRaw, phone: phoneRaw } });
       continue;
     }
 
-    if (invalidChars.test(nameRaw) || invalidChars.test(phoneRaw)) {
+    if (invalidChars.test(nameRaw) || (phoneRaw && invalidChars.test(phoneRaw))) {
       errors.push({ row: rowNum, reason: 'Invalid characters detected', data: { name: nameRaw, phone: phoneRaw } });
       continue;
     }
 
-    if (!phonePattern.test(phoneRaw)) {
-      errors.push({ row: rowNum, reason: 'Invalid phone format', data: { name: nameRaw, phone: phoneRaw } });
-      continue;
+    let phoneFormatted = '';
+    if (phoneRaw) {
+      const formatted = formatUgandanPhoneNumber(phoneRaw);
+      const cleanDigits = formatted.replace(/[^\d]/g, '');
+      if (cleanDigits.length === 12 && formatted.startsWith('+256')) {
+        phoneFormatted = formatted;
+      } else {
+        phoneFormatted = phoneRaw;
+        warnings.push(`Phone number "${phoneRaw}" is not in standard Ugandan format (+256...)`);
+      }
     }
 
     if (emailRaw && !emailPattern.test(emailRaw)) {
@@ -119,7 +195,7 @@ router.post('/preview', (req, res) => {
       }
     }
 
-    const existingByPhone = db.prepare('SELECT id, name FROM guests WHERE event_id = ? AND phone = ?').get(event_id, phoneRaw);
+    const existingByPhone = phoneFormatted ? db.prepare('SELECT id, name FROM guests WHERE event_id = ? AND phone = ?').get(event_id, phoneFormatted) : null;
     const existingByEmail = emailRaw ? db.prepare('SELECT id, name FROM guests WHERE event_id = ? AND email = ?').get(event_id, emailRaw) : null;
     const existingByName = db.prepare('SELECT id, name FROM guests WHERE event_id = ? AND name = ?').get(event_id, nameRaw);
 
@@ -144,7 +220,7 @@ router.post('/preview', (req, res) => {
 
     parsed.push({
       name: nameRaw,
-      phone: phoneRaw,
+      phone: phoneFormatted || null,
       email: emailRaw || null,
       table_number: tableRaw || null,
       guest_count: guestCount,

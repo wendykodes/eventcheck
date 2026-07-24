@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import db from '../database.js';
 import jwt from '../jwt.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { formatUgandanPhoneNumber } from '../phoneUtils.js';
 
 const router = Router();
 
@@ -170,13 +171,14 @@ router.post('/register', (req, res) => {
   if (event.onboarding_method === 'invitation_only' || event.onboarding_method === 'manual_only') {
     return res.status(403).json({ error: 'Self-registration is not enabled for this event.' });
   }
+  const formattedPhone = phone ? formatUgandanPhoneNumber(phone) : null;
   const pin_hash = bcrypt.hashSync(pin, 10);
 
   if (event.onboarding_method === 'auto_approve') {
     const result = db.prepare(`
       INSERT INTO users (name, phone, email, pin_hash, role, status)
       VALUES (?, ?, ?, ?, 'staff', 'active')
-    `).run(name, phone || null, email || null, pin_hash);
+    `).run(name, formattedPhone, email || null, pin_hash);
     db.prepare('INSERT INTO user_events (user_id, event_id) VALUES (?, ?)').run(result.lastInsertRowid, event.id);
     return res.status(201).json({ message: 'Registration complete. You can now log in.', event_name: event.name, auto_approved: true });
   }
@@ -184,7 +186,7 @@ router.post('/register', (req, res) => {
   const reqResult = db.prepare(`
     INSERT INTO registration_requests (name, phone, email, pin_hash, event_id)
     VALUES (?, ?, ?, ?, ?)
-  `).run(name, phone || null, email || null, pin_hash, event.id);
+  `).run(name, formattedPhone, email || null, pin_hash, event.id);
   res.status(201).json({ message: 'Registration submitted. Awaiting admin approval.', event_name: event.name, auto_approved: false, request_id: reqResult.lastInsertRowid });
 });
 
@@ -211,7 +213,7 @@ router.post('/invitations/accept', (req, res) => {
     const result = db.prepare(`
       INSERT INTO users (name, phone, email, pin_hash, role, status)
       VALUES (?, ?, ?, ?, ?, 'active')
-    `).run(inv.name, inv.phone, inv.email, pin_hash, inv.role);
+    `).run(inv.name, inv.phone ? formatUgandanPhoneNumber(inv.phone) : null, inv.email, pin_hash, inv.role);
     db.prepare('INSERT INTO user_events (user_id, event_id) VALUES (?, ?)').run(result.lastInsertRowid, inv.event_id);
     db.prepare("UPDATE invitations SET status = 'accepted', used_at = datetime('now'), used_by = ? WHERE id = ?").run(result.lastInsertRowid, inv.id);
   });
@@ -226,10 +228,11 @@ router.post('/invitations', requireAuth, requireAdmin, (req, res) => {
   if (!existingEvent) return res.status(400).json({ error: 'Event not found' });
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').split('.')[0];
+  const formattedInvitationPhone = phone ? formatUgandanPhoneNumber(phone) : null;
   db.prepare(`
     INSERT INTO invitations (token, name, phone, email, event_id, activity_ids, role, created_by, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(token, name, phone || null, email || null, event_id, activity_ids ? JSON.stringify(activity_ids) : null, role || 'staff', req.user.id, expiresAt);
+  `).run(token, name, formattedInvitationPhone, email || null, event_id, activity_ids ? JSON.stringify(activity_ids) : null, role || 'staff', req.user.id, expiresAt);
   const link = `${req.protocol}://${req.get('host').replace(/:3001$/, ':5173')}/invitation/${token}`;
   res.status(201).json({ token, link, expires_at: expiresAt, event_name: existingEvent.name });
 });

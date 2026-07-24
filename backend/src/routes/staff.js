@@ -90,15 +90,15 @@ router.get('/activity-performance', (req, res) => {
   const { event_id } = req.query;
   if (!event_id) return res.status(400).json({ error: 'event_id is required' });
 
-  const totalGuests = db.prepare('SELECT COUNT(*) AS c FROM guests WHERE event_id = ?').get(event_id).c;
-  const totalAttendees = db.prepare('SELECT COALESCE(SUM(guest_count), 0) AS c FROM guests WHERE event_id = ?').get(event_id).c;
+  const totalGuests = db.prepare("SELECT COUNT(*) AS c FROM guests WHERE event_id = ? AND status = 'approved'").get(event_id).c;
+  const totalAttendees = db.prepare("SELECT COALESCE(SUM(guest_count), 0) AS c FROM guests WHERE event_id = ? AND status = 'approved'").get(event_id).c;
 
   const activities = db.prepare('SELECT * FROM activities WHERE event_id = ? ORDER BY sort_order ASC').all(event_id);
 
   const result = activities.map(a => {
     const stats = db.prepare(`
       SELECT COUNT(*) AS guests, COALESCE(SUM(g.guest_count), 0) AS attendees
-      FROM checkins c JOIN guests g ON g.id = c.guest_id WHERE c.activity_id = ?
+      FROM checkins c JOIN guests g ON g.id = c.guest_id WHERE c.activity_id = ? AND g.status = 'approved'
     `).get(a.id);
 
     const staffList = db.prepare(`

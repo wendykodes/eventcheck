@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { api } from '../api/client';
 import { SkeletonCard } from '../components/Skeleton';
@@ -113,8 +113,8 @@ export default function CheckInPage({ user }) {
       const ci = await api.checkIn(guestId, selectedActivity);
       setCheckedIn(prev => ({ ...prev, [guestId]: [...(prev[guestId] || []), ci] }));
       setRecentGuestIds(prev => [guestId, ...prev.filter(id => id !== guestId)].slice(0, 10));
-      setMetrics(prev => ({ ...prev, checked: prev.checked + 1, attendees_checked: prev.attendees_checked + (guests.find(g => g.id === guestId)?.guest_count || 1) }));
       toast.success('Checked in!');
+      if (selectedEvent) loadMetrics(selectedEvent);
       setTimeout(() => searchRef.current?.focus(), 100);
     } catch (err) {
       toast.error(err.message);
@@ -129,15 +129,8 @@ export default function CheckInPage({ user }) {
         ...prev,
         [guestId]: (prev[guestId] || []).filter(c => c.id !== checkinId)
       }));
-      setMetrics(prev => {
-        const guestCount = guests.find(g => g.id === guestId)?.guest_count || 1;
-        return {
-          ...prev,
-          checked: Math.max(0, prev.checked - 1),
-          attendees_checked: Math.max(0, prev.attendees_checked - guestCount)
-        };
-      });
       toast.success('Check-in undone');
+      if (selectedEvent) loadMetrics(selectedEvent);
     } catch (err) {
       toast.error(err.message);
       throw err;
@@ -286,6 +279,15 @@ export default function CheckInPage({ user }) {
             </div>
           </div>
           <div className="flex items-center gap-2 ml-2 shrink-0">
+            <Link
+              to={`/events/${selectedEvent}/guests`}
+              className="inline-flex items-center gap-1 text-[12px] font-bold text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+              </svg>
+              Guests
+            </Link>
             <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full ${
               isOnline ? 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400'
             }`}>
@@ -296,10 +298,10 @@ export default function CheckInPage({ user }) {
         </div>
 
         <div className="grid grid-cols-4 gap-1.5 mb-2.5">
-          <MetricBox label="Checked" value={metrics.checked} color="text-blue-500" />
-          <MetricBox label="Remaining" value={remaining} color={remaining > 0 ? 'text-amber-500' : 'text-green-500'} />
-          <MetricBox label="Attendees" value={`${metrics.attendees_checked}/${metrics.attendees_total}`} color="text-green-500" />
-          <MetricBox label="Left" value={remainingAttendees} color={remainingAttendees > 0 ? 'text-amber-500' : 'text-green-500'} />
+          <MetricBox label="Invites In" value={metrics.checked} color="text-blue-500" />
+          <MetricBox label="Invites Left" value={remaining} color={remaining > 0 ? 'text-amber-500' : 'text-green-500'} />
+          <MetricBox label="People In" value={metrics.attendees_checked} color="text-green-500" />
+          <MetricBox label="People Left" value={remainingAttendees} color={remainingAttendees > 0 ? 'text-amber-500' : 'text-green-500'} />
         </div>
 
         <div className="relative">

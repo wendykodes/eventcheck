@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
 import toast from 'react-hot-toast';
@@ -50,6 +50,39 @@ export default function ImportPage() {
 
   const [preview, setPreview] = useState(null);
   const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (parsedColumns.length > 0) {
+      const nameKeywords = ['name', 'guest name', 'fullname', 'full name', 'guest'];
+      const phoneKeywords = ['phone', 'phone number', 'telephone', 'contact', 'mobile', 'tel'];
+      const emailKeywords = ['email', 'e-mail', 'email address'];
+      const tableKeywords = ['table', 'table number', 'table no', 'seating'];
+      const countKeywords = ['count', 'guest count', 'guests', 'no of guests', 'number of guests', 'pax', 'size'];
+      const categoryKeywords = ['category', 'group', 'type'];
+      const notesKeywords = ['notes', 'note', 'comments', 'comment', 'description'];
+
+      const autoMapping = {};
+      parsedColumns.forEach(col => {
+        const val = col.toLowerCase().trim();
+        if (nameKeywords.some(k => val === k || val.includes(k)) && !autoMapping.name) {
+          autoMapping.name = col;
+        } else if (phoneKeywords.some(k => val === k || val.includes(k)) && !autoMapping.phone) {
+          autoMapping.phone = col;
+        } else if (emailKeywords.some(k => val === k || val.includes(k)) && !autoMapping.email) {
+          autoMapping.email = col;
+        } else if (tableKeywords.some(k => val === k || val.includes(k)) && !autoMapping.table_number) {
+          autoMapping.table_number = col;
+        } else if (countKeywords.some(k => val === k || val.includes(k)) && !autoMapping.guest_count) {
+          autoMapping.guest_count = col;
+        } else if (categoryKeywords.some(k => val === k || val.includes(k)) && !autoMapping.category) {
+          autoMapping.category = col;
+        } else if (notesKeywords.some(k => val === k || val.includes(k)) && !autoMapping.notes) {
+          autoMapping.notes = col;
+        }
+      });
+      setMapping(autoMapping);
+    }
+  }, [parsedColumns]);
 
   const handleFileSelect = useCallback(async (file) => {
     if (!file) return;
