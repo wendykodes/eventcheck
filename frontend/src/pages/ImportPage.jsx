@@ -80,9 +80,41 @@ export default function ImportPage() {
           autoMapping.notes = col;
         }
       });
+
+      // Guess by value for any columns not matched by header keywords
+      if (sampleRows && sampleRows.length > 0) {
+        parsedColumns.forEach(col => {
+          const values = sampleRows
+            .map(row => String(row[col] ?? '').trim())
+            .filter(v => v !== '');
+
+          if (values.length === 0) return;
+
+          // Guess phone: digit counts are high, or starts with +
+          const isPhoneGuess = values.every(v => {
+            const digits = v.replace(/\D/g, '');
+            return digits.length >= 7 || (v.startsWith('+') && digits.length >= 5);
+          });
+
+          // Guess email: has @ and .
+          const isEmailGuess = values.every(v => v.includes('@') && v.includes('.'));
+
+          // Guess name: contains letters, no numbers, length >= 2
+          const isNameGuess = values.every(v => /^[a-zA-Z\s'.]+$/.test(v) && v.length >= 2);
+
+          if (isPhoneGuess && !autoMapping.phone) {
+            autoMapping.phone = col;
+          } else if (isEmailGuess && !autoMapping.email) {
+            autoMapping.email = col;
+          } else if (isNameGuess && !autoMapping.name) {
+            autoMapping.name = col;
+          }
+        });
+      }
+
       setMapping(autoMapping);
     }
-  }, [parsedColumns]);
+  }, [parsedColumns, sampleRows]);
 
   const handleFileSelect = useCallback(async (file) => {
     if (!file) return;

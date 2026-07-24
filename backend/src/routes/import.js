@@ -39,6 +39,7 @@ router.post('/parse', (req, res) => {
 
     let headerRowIdx = 0;
     let bestScore = -1;
+    let bestRowIdx = 0;
     for (let r = 0; r < Math.min(15, rows.length); r++) {
       const row = rows[r];
       let score = 0;
@@ -64,43 +65,68 @@ router.post('/parse', (req, res) => {
       }
     }
 
+    let hasHeader = true;
     if (bestScore <= 0) {
       // Find the first row that is not completely empty
+      let firstNonEmptyRowIdx = 0;
       for (let r = 0; r < rows.length; r++) {
         if (rows[r].some(cell => String(cell || '').trim() !== '')) {
-          headerRowIdx = r;
+          firstNonEmptyRowIdx = r;
           break;
         }
+      }
+      headerRowIdx = firstNonEmptyRowIdx;
+
+      // Check if this row looks like a data row instead of a header row
+      const firstRow = rows[headerRowIdx] || [];
+      let looksLikeData = false;
+      for (const cell of firstRow) {
+        const val = String(cell || '').trim();
+        // If it looks like a phone number (7+ digits) or an email
+        if (/^\+?[\d\s-]{7,15}$/.test(val) || val.includes('@')) {
+          looksLikeData = true;
+          break;
+        }
+      }
+      if (looksLikeData) {
+        hasHeader = false;
       }
     } else {
       headerRowIdx = bestRowIdx;
     }
 
-    const headerRow = rows[headerRowIdx];
-    const columns = headerRow.map((cell, colIdx) => {
-      const val = String(cell || '').trim();
-      if (!val) {
-        return `Column_${colIdx + 1}`;
+    let columns = [];
+    if (hasHeader) {
+      const headerRow = rows[headerRowIdx];
+      columns = headerRow.map((cell, colIdx) => {
+        const val = String(cell || '').trim();
+        return val || `Column_${colIdx + 1}`;
+      });
+    } else {
+      // Generate synthetic header column names based on the max row length
+      let maxCols = 0;
+      rows.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
+      for (let i = 0; i < maxCols; i++) {
+        columns.push(`Column_${i + 1}`);
       }
-      return val;
-    }).filter(k => k);
+    }
 
     const rawData = [];
-    for (let r = headerRowIdx + 1; r < rows.length; r++) {
+    const startIdx = hasHeader ? headerRowIdx + 1 : headerRowIdx;
+    for (let r = startIdx; r < rows.length; r++) {
       const row = rows[r];
-      if (row.every(cell => String(cell || '').trim() === '')) {
+      if (!row || row.every(cell => String(cell || '').trim() === '')) {
         continue;
       }
       const rowObj = {};
-      headerRow.forEach((colName, colIdx) => {
-        const key = String(colName || '').trim() || `Column_${colIdx + 1}`;
-        rowObj[key] = row[colIdx] !== undefined ? String(row[colIdx]).trim() : '';
+      columns.forEach((colName, colIdx) => {
+        rowObj[colName] = row[colIdx] !== undefined ? String(row[colIdx]).trim() : '';
       });
       rawData.push(rowObj);
     }
 
     if (rawData.length === 0) {
-      return res.status(400).json({ error: 'No data rows found below the header row' });
+      return res.status(400).json({ error: 'No data rows found in the sheet' });
     }
 
     const sessionId = crypto.randomBytes(16).toString('hex');
