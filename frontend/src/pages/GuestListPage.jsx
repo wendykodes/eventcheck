@@ -64,7 +64,6 @@ export default function GuestListPage() {
   const validate = () => {
     const e = {};
     if (!form.name.trim()) e.name = 'Required';
-    if (!form.phone.trim()) e.phone = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -192,8 +191,7 @@ export default function GuestListPage() {
               {errors.name && <p className="text-xs text-red-500 mt-1 ml-1">{errors.name}</p>}
             </div>
             <div>
-              <input value={form.phone} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="Phone *" className={`input-field ${errors.phone ? 'input-error' : ''}`} />
-              {errors.phone && <p className="text-xs text-red-500 mt-1 ml-1">{errors.phone}</p>}
+              <input value={form.phone} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="Phone" className="input-field" />
             </div>
             <input value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))} placeholder="Email" className="input-field" />
             <input value={form.table_number} onChange={e => setForm(f => ({...f, table_number: e.target.value}))} placeholder="Table" className="input-field" />
@@ -304,54 +302,95 @@ export default function GuestListPage() {
         <EmptyState title="No Guests" message={query ? 'Try a different search' : 'Add your first guest to the list.'}
           action={!query ? <button onClick={() => setShowForm(true)} className="btn btn-primary">+ Add Guest</button> : null} />
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[12px] font-semibold text-[var(--color-text-secondary)] bg-[var(--color-surface-hover)]">
-                <th className="py-3.5 pl-4 w-10">
-                  <input type="checkbox" checked={selectAll && filtered.length > 0} onChange={toggleSelectAll}
-                    className="w-4 h-4 rounded border-[var(--color-border)] accent-blue-500 cursor-pointer" />
-                </th>
-                <th className="py-3.5 px-2">Name</th>
-                <th className="py-3.5 px-2">Phone</th>
-                <th className="py-3.5 px-2 text-center">#</th>
-                <th className="py-3.5 px-2">Table</th>
-                {displayActivities.map(a => <th key={a.id} className="py-3.5 px-2 text-center text-[11px]">{a.name}</th>)}
-                <th className="py-3.5 px-2 w-14"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
-              {filtered.map((guest, i) => (
-                <tr key={guest.id} className="hover:bg-[var(--color-surface-hover)] transition-colors animate-fade-in" style={{animationDelay: `${i*20}ms`}}>
-                  <td className="py-3 pl-4">
-                    <input type="checkbox" checked={selected.has(guest.id)} onChange={() => toggleSelect(guest.id)}
+        <>
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[12px] font-semibold text-[var(--color-text-secondary)] bg-[var(--color-surface-hover)]">
+                  <th className="py-3.5 pl-4 w-10">
+                    <input type="checkbox" checked={selectAll && filtered.length > 0} onChange={toggleSelectAll}
                       className="w-4 h-4 rounded border-[var(--color-border)] accent-blue-500 cursor-pointer" />
-                  </td>
-                  <td className="py-3 px-2">
-                    <Link to={`/events/${eventId}/guests/${guest.id}`} className="font-semibold text-blue-500 hover:text-blue-600 transition-colors">
-                      {guest.name}
-                    </Link>
-                  </td>
-                  <td className="py-3 px-2 text-[var(--color-text-secondary)]">{guest.phone}</td>
-                  <td className="py-3 px-2 text-center font-semibold">{guest.guest_count}</td>
-                  <td className="py-3 px-2 text-[var(--color-text-secondary)]">{guest.table_number || '—'}</td>
-                  {displayActivities.map(a => (
-                    <td key={a.id} className="py-3 px-2 text-center">
-                      <CheckStatus guestId={guest.id} activityId={a.id} />
-                    </td>
-                  ))}
-                  <td className="py-3 px-2">
-                    <button onClick={() => setDeleteTarget(guest)} className="btn btn-ghost btn-icon text-[var(--color-text-secondary)]">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                      </svg>
-                    </button>
-                  </td>
+                  </th>
+                  <th className="py-3.5 px-2">Name</th>
+                  <th className="py-3.5 px-2">Phone</th>
+                  <th className="py-3.5 px-2 text-center">#</th>
+                  <th className="py-3.5 px-2">Table</th>
+                  {displayActivities.map(a => <th key={a.id} className="py-3.5 px-2 text-center text-[11px]">{a.name}</th>)}
+                  <th className="py-3.5 px-2 w-14"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)]">
+                {filtered.map((guest, i) => (
+                  <tr key={guest.id} className="hover:bg-[var(--color-surface-hover)] transition-colors animate-fade-in" style={{animationDelay: `${i*20}ms`}}>
+                    <td className="py-3 pl-4">
+                      <input type="checkbox" checked={selected.has(guest.id)} onChange={() => toggleSelect(guest.id)}
+                        className="w-4 h-4 rounded border-[var(--color-border)] accent-blue-500 cursor-pointer" />
+                    </td>
+                    <td className="py-3 px-2">
+                      <Link to={`/events/${eventId}/guests/${guest.id}`} className="font-semibold text-blue-500 hover:text-blue-600 transition-colors">
+                        {guest.name}
+                      </Link>
+                    </td>
+                    <td className="py-3 px-2 text-[var(--color-text-secondary)]">{guest.phone}</td>
+                    <td className="py-3 px-2 text-center font-semibold">{guest.guest_count}</td>
+                    <td className="py-3 px-2 text-[var(--color-text-secondary)]">{guest.table_number || '—'}</td>
+                    {displayActivities.map(a => (
+                      <td key={a.id} className="py-3 px-2 text-center">
+                        <CheckStatus guestId={guest.id} activityId={a.id} />
+                      </td>
+                    ))}
+                    <td className="py-3 px-2">
+                      <button onClick={() => setDeleteTarget(guest)} className="btn btn-ghost btn-icon text-[var(--color-text-secondary)]">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card List View */}
+          <div className="space-y-3 md:hidden">
+            {filtered.map((guest, i) => (
+              <div key={guest.id} className="card p-4 flex flex-col gap-3 animate-slide-up" style={{animationDelay: `${i*15}ms`}}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <input type="checkbox" checked={selected.has(guest.id)} onChange={() => toggleSelect(guest.id)}
+                      className="w-4 h-4 rounded border-[var(--color-border)] accent-blue-500 cursor-pointer mt-1" />
+                    <div className="min-w-0">
+                      <Link to={`/events/${eventId}/guests/${guest.id}`} className="font-bold text-[16px] text-blue-500 hover:text-blue-600 transition-colors block leading-tight">
+                        {guest.name}
+                      </Link>
+                      <div className="text-xs text-[var(--color-text-secondary)] mt-1 flex flex-wrap gap-x-2 gap-y-1 items-center">
+                        {guest.phone && <span>{guest.phone}</span>}
+                        {guest.phone && <span className="text-[var(--color-border)]">·</span>}
+                        <span className="font-semibold text-[var(--color-text)]">Table {guest.table_number || '—'}</span>
+                        <span className="text-[var(--color-border)]">·</span>
+                        <span className="font-semibold text-[var(--color-text)]">{guest.guest_count} {guest.guest_count === 1 ? 'person' : 'people'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={() => setDeleteTarget(guest)} className="btn btn-ghost btn-icon text-[var(--color-text-secondary)] -mt-1 -mr-1">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Check-in stations indicators for mobile */}
+                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[var(--color-border)]/50">
+                  {displayActivities.map(a => (
+                    <CheckStatusBadge key={a.id} guestId={guest.id} activity={a} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       ))}
 
       <Modal open={showBulkModal} title={bulkAction === 'delete' ? 'Delete Guests' : 'Bulk Update'}
@@ -396,5 +435,34 @@ function CheckStatus({ guestId, activityId }) {
     </span>
   ) : (
     <span className="text-[var(--color-border)]">—</span>
+  );
+}
+
+function CheckStatusBadge({ guestId, activity }) {
+  const [ci, setCi] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.getGuestCheckins(guestId).then(cs => {
+      if (cancelled) return;
+      const match = cs.find(c => c.activity_id === activity.id);
+      if (match) setCi(match);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [guestId, activity.id]);
+  
+  if (ci) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400 font-medium">
+        <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+        </svg>
+        {activity.name}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-50 dark:bg-zinc-800/40 text-[var(--color-text-secondary)] border border-[var(--color-border)]/30">
+      {activity.name}
+    </span>
   );
 }

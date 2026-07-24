@@ -7,7 +7,7 @@ const STEPS = ['Upload', 'Map Columns', 'Preview', 'Import', 'Summary'];
 
 const FIELD_OPTIONS = [
   { key: 'name', label: 'Full Name', required: true },
-  { key: 'phone', label: 'Phone Number', required: true },
+  { key: 'phone', label: 'Phone Number', required: false },
   { key: 'email', label: 'Email' },
   { key: 'guest_count', label: 'Guest Count' },
   { key: 'table_number', label: 'Table Number' },
@@ -135,8 +135,8 @@ export default function ImportPage() {
   };
 
   const handlePreview = async () => {
-    if (!mapping.name || !mapping.phone) {
-      toast.error('Map at least Full Name and Phone Number');
+    if (!mapping.name) {
+      toast.error('Map at least Full Name column');
       return;
     }
     setLoading(true);
@@ -269,7 +269,7 @@ export default function ImportPage() {
 
           <div className="flex gap-3">
             <button onClick={() => setStep(0)} className="btn btn-ghost flex-1">Back</button>
-            <button onClick={handlePreview} className="btn btn-primary flex-1" disabled={!mapping.name || !mapping.phone || loading}>
+            <button onClick={handlePreview} className="btn btn-primary flex-1" disabled={!mapping.name || loading}>
               {loading ? 'Analyzing...' : 'Preview Import'}
             </button>
           </div>
