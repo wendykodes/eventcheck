@@ -31,7 +31,7 @@ export default function LeaderboardPage() {
     return () => clearInterval(interval);
   }, [selectedEvent]);
 
-  const colors = ['#0071e3', '#30d158', '#ff9f0a', '#ff453a', '#5e5ce6', '#ff375f'];
+  const colors = ['#ff3b30', '#30d158', '#ff9f0a', '#ff453a', '#5e5ce6', '#ff375f'];
 
   return (
     <div className="pt-2 space-y-4 animate-fade-in">
@@ -46,12 +46,12 @@ export default function LeaderboardPage() {
       </div>
 
       {events.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto scroll-none">
+        <div className="flex flex-wrap gap-1.5 px-1">
           <button onClick={() => setSelectedEvent(null)}
-            className={`btn btn-sm rounded-full ${!selectedEvent ? 'bg-blue-500 text-white' : 'btn-secondary'}`}>All Events</button>
+            className={`btn btn-sm rounded-full text-xs px-3.5 py-1.5 transition-all ${!selectedEvent ? 'bg-[var(--color-blue-500)] text-white shadow-sm' : 'btn-secondary'}`}>All Events</button>
           {events.map(e => (
             <button key={e.id} onClick={() => setSelectedEvent(e.id)}
-              className={`btn btn-sm rounded-full ${selectedEvent === e.id ? 'bg-blue-500 text-white' : 'btn-secondary'}`}>{e.name}</button>
+              className={`btn btn-sm rounded-full text-xs px-3.5 py-1.5 transition-all ${selectedEvent === e.id ? 'bg-[var(--color-blue-500)] text-white shadow-sm' : 'btn-secondary'}`}>{e.name}</button>
           ))}
         </div>
       )}
