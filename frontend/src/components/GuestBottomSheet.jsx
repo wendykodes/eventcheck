@@ -78,7 +78,7 @@ export default function GuestBottomSheet({ guest, onClose, selectedActivity, onC
 
           <div className="flex flex-wrap gap-2 mb-4">
             {guest.guest_count > 1 && (
-              <span className="badge badge-blue">
+              <span className="badge badge-primary">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
                 </svg>
@@ -137,7 +137,7 @@ export default function GuestBottomSheet({ guest, onClose, selectedActivity, onC
                   )}
                 </div>
               ) : (
-                <button onClick={handleCheckInClick} disabled={actionLoading} className="btn btn-primary w-full py-3.5 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20">
+                <button onClick={handleCheckInClick} disabled={actionLoading} className="btn btn-primary w-full py-3.5 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary-500/20">
                   {actionLoading ? (
                     <svg className="w-5 h-5 animate-spin text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                   ) : (

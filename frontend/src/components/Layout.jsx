@@ -97,7 +97,7 @@ export default function Layout({ user, onLogout, theme }) {
       <header className="sticky top-0 z-40 glass border-b border-[var(--color-border)]/50">
         <div className="max-w-[640px] mx-auto px-4 h-[52px] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-[10px] bg-blue-500 flex items-center justify-center shadow-md shadow-blue-500/20">
+            <div className="w-8 h-8 rounded-[10px] bg-primary-500 flex items-center justify-center shadow-md shadow-primary-500/20">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-12v.75m0 3v.75m0 3v.75m0 3V18M3 8.25h1.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 011.5-1.5h9A1.5 1.5 0 0118 6v.75a1.5 1.5 0 00-1.5 1.5H21a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5h-1.5a1.5 1.5 0 00-1.5 1.5V18a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 016 18v-.75a1.5 1.5 0 00-1.5-1.5H3a1.5 1.5 0 01-1.5-1.5v-9A1.5 1.5 0 013 8.25z" />
               </svg>
@@ -149,7 +149,7 @@ export default function Layout({ user, onLogout, theme }) {
             return (
               <Link key={item.to} to={item.to}
                 className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-all ${
-                  isActive ? 'text-blue-500' : 'text-[var(--color-text-secondary)]'
+                  isActive ? 'text-primary-500' : 'text-[var(--color-text-secondary)]'
                 }`}
               >
                 {getAppIcon(item.icon, isActive)}

@@ -208,18 +208,18 @@ export default function ImportPage() {
     <div className="page-card max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">Import Guests</h1>
-        <Link to={`/events/${eventId}/guests`} className="text-sm text-blue-500 hover:underline">Back to Guests</Link>
+        <Link to={`/events/${eventId}/guests`} className="text-sm text-primary-500 hover:underline">Back to Guests</Link>
       </div>
 
       <div className="flex items-center gap-1 mb-6 overflow-x-auto">
         {STEPS.map((s, i) => (
           <div key={s} className="flex items-center gap-1 shrink-0">
             <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold ${
-              i < step ? 'bg-green-500 text-white' : i === step ? 'bg-blue-500 text-white' : 'bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]'
+              i < step ? 'bg-green-500 text-white' : i === step ? 'bg-primary-500 text-white' : 'bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]'
             }`}>
               {i < step ? '✓' : i + 1}
             </div>
-            <span className={`text-[11px] font-medium hidden sm:inline ${i === step ? 'text-blue-500' : 'text-[var(--color-text-secondary)]'}`}>{s}</span>
+            <span className={`text-[11px] font-medium hidden sm:inline ${i === step ? 'text-primary-500' : 'text-[var(--color-text-secondary)]'}`}>{s}</span>
             {i < STEPS.length - 1 && <div className="w-6 h-px bg-[var(--color-border)] mx-1" />}
           </div>
         ))}
@@ -230,7 +230,7 @@ export default function ImportPage() {
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-[var(--color-border)] rounded-2xl p-12 text-center cursor-pointer hover:border-blue-400 transition-colors"
+          className="border-2 border-dashed border-[var(--color-border)] rounded-2xl p-12 text-center cursor-pointer hover:border-primary-400 transition-colors"
         >
           <svg className="w-12 h-12 mx-auto mb-4 text-[var(--color-text-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -319,7 +319,7 @@ export default function ImportPage() {
             <StatCard label="Valid" value={preview.valid} color="text-green-500" />
             <StatCard label="Duplicates" value={preview.duplicates} color="text-amber-500" />
             <StatCard label="Invalid" value={preview.invalid} color="text-red-500" />
-            <StatCard label="Warnings" value={preview.warnings} color="text-blue-500" />
+            <StatCard label="Warnings" value={preview.warnings} color="text-primary-500" />
           </div>
 
           {preview.invalid > 0 && (
@@ -353,7 +353,7 @@ export default function ImportPage() {
                       {row.duplicate_type
                         ? <span className="text-amber-400">Duplicate ({row.duplicate_type})</span>
                         : row.warnings?.length
-                          ? <span className="text-blue-400" title={row.warnings.join(', ')}>Warning</span>
+                          ? <span className="text-primary-400" title={row.warnings.join(', ')}>Warning</span>
                           : <span className="text-green-400">OK</span>
                       }
                     </td>
@@ -386,7 +386,7 @@ export default function ImportPage() {
 
       {step === 3 && loading && (
         <div className="text-center py-12">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-sm text-[var(--color-text-secondary)]">Importing guests...</p>
         </div>
       )}
@@ -418,7 +418,7 @@ export default function ImportPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <StatCard label="Total" value={result.total} />
                 <StatCard label="Imported" value={result.imported} color="text-green-500" />
-                <StatCard label="Updated" value={result.updated} color="text-blue-500" />
+                <StatCard label="Updated" value={result.updated} color="text-primary-500" />
                 <StatCard label="Skipped" value={result.skipped} color="text-amber-500" />
                 <StatCard label="Duplicates" value={result.duplicate_count} color="text-amber-500" />
                 <StatCard label="Failed" value={result.failed} color="text-red-500" />

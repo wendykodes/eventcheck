@@ -70,7 +70,7 @@ export default function PendingApprovalPage() {
             <p className="text-sm text-[var(--color-text-secondary)] mb-8">
               You can now log in with your PIN.
             </p>
-            <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20">
+            <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20">
               Log In Now
             </Link>
           </div>
@@ -93,7 +93,7 @@ export default function PendingApprovalPage() {
             <p className="text-sm text-[var(--color-text-secondary)] mb-8">
               Your registration request was not approved. Please contact an administrator.
             </p>
-            <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20">
+            <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20">
               Return to Login
             </Link>
           </div>
@@ -116,7 +116,7 @@ export default function PendingApprovalPage() {
             <p className="text-sm text-[var(--color-text-secondary)] mb-8">
               We couldn't retrieve your registration status. Please try again later.
             </p>
-            <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20">
+            <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20">
               Return to Login
             </Link>
           </div>

@@ -56,7 +56,7 @@ export default function GuestDetailPage() {
 
   return (
     <div className="pt-2 space-y-5 animate-fade-in">
-      <Link to={`/events/${eventId}/guests`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-blue-500 transition-colors inline-flex items-center gap-1">
+      <Link to={`/events/${eventId}/guests`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-primary-500 transition-colors inline-flex items-center gap-1">
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
         Back
       </Link>
@@ -65,7 +65,7 @@ export default function GuestDetailPage() {
         <div className="card p-6 animate-slide-up">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 flex items-center justify-center text-xl font-bold shrink-0">
+              <div className="w-14 h-14 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-500 flex items-center justify-center text-xl font-bold shrink-0">
                 {guest.name.charAt(0).toUpperCase()}
               </div>
               <div>
@@ -109,7 +109,7 @@ export default function GuestDetailPage() {
 
       <div>
         <h2 className="section-title flex items-center gap-2">
-          <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-4 h-4 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           Activity History

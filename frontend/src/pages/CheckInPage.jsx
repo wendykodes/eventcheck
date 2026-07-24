@@ -10,7 +10,7 @@ function highlight(text, query) {
   const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
   const parts = text.split(re);
   return parts.map((p, i) =>
-    re.test(p) ? <mark key={i} className="bg-blue-200 dark:bg-blue-800/40 rounded-sm text-inherit">{p}</mark> : p
+    re.test(p) ? <mark key={i} className="bg-primary-200 dark:bg-primary-800/40 rounded-sm text-inherit">{p}</mark> : p
   );
 }
 
@@ -167,7 +167,7 @@ export default function CheckInPage({ user }) {
     if (searchParams.get('mode') === 'checkin') {
       return (
         <div className="flex flex-col items-center justify-center py-24 text-center animate-scale-in">
-          <div className="w-16 h-16 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 flex items-center justify-center mb-5">
+          <div className="w-16 h-16 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-500 flex items-center justify-center mb-5">
             <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -190,11 +190,11 @@ export default function CheckInPage({ user }) {
         <div className="space-y-2.5 mt-2">
           {events.map((e, i) => (
             <button key={e.id} onClick={() => setSearchParams({ event: e.id })}
-              className="card w-full p-5 text-left font-semibold text-[17px] hover:border-blue-400 active:scale-[0.98] animate-slide-up"
+              className="card w-full p-5 text-left font-semibold text-[17px] hover:border-primary-400 active:scale-[0.98] animate-slide-up"
               style={{ animationDelay: `${i * 50}ms` }}
             >
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500 flex items-center justify-center shrink-0 shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-primary-500 flex items-center justify-center shrink-0 shadow-sm">
                   <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -223,7 +223,7 @@ export default function CheckInPage({ user }) {
         <div className="space-y-2.5 mt-1">
           {activities.map((a, i) => (
             <button key={a.id} onClick={() => setSelectedActivity(a.id)}
-              className="card w-full p-5 text-left font-semibold text-[17px] hover:border-blue-400 active:scale-[0.98] animate-slide-up"
+              className="card w-full p-5 text-left font-semibold text-[17px] hover:border-primary-400 active:scale-[0.98] animate-slide-up"
               style={{ animationDelay: `${i * 50}ms` }}
             >
               <div className="flex items-center gap-4">
@@ -265,7 +265,7 @@ export default function CheckInPage({ user }) {
               <select
                 value={selectedActivity || ''}
                 onChange={e => setSelectedActivity(e.target.value ? Number(e.target.value) : null)}
-                className="appearance-none bg-transparent pr-4 text-[12px] font-bold text-blue-500 dark:text-blue-400 focus:outline-none border-b border-dashed border-blue-500/50 pb-0.5 cursor-pointer max-w-[180px] truncate"
+                className="appearance-none bg-transparent pr-4 text-[12px] font-bold text-primary-500 dark:text-primary-400 focus:outline-none border-b border-dashed border-primary-500/50 pb-0.5 cursor-pointer max-w-[180px] truncate"
               >
                 {activities.map(a => (
                   <option key={a.id} value={a.id} className="text-black dark:text-white bg-[var(--color-surface)]">
@@ -273,7 +273,7 @@ export default function CheckInPage({ user }) {
                   </option>
                 ))}
               </select>
-              <svg className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-blue-500 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <svg className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-primary-500 dark:text-primary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
               </svg>
             </div>
@@ -281,7 +281,7 @@ export default function CheckInPage({ user }) {
           <div className="flex items-center gap-2 ml-2 shrink-0">
             <Link
               to={`/events/${selectedEvent}/guests`}
-              className="inline-flex items-center gap-1 text-[12px] font-bold text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+              className="inline-flex items-center gap-1 text-[12px] font-bold text-primary-500 hover:text-primary-600 dark:text-primary-400 dark:hover:text-primary-300"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
@@ -298,7 +298,7 @@ export default function CheckInPage({ user }) {
         </div>
 
         <div className="grid grid-cols-4 gap-1.5 mb-2.5">
-          <MetricBox label="Invites In" value={metrics.checked} color="text-blue-500" />
+          <MetricBox label="Invites In" value={metrics.checked} color="text-primary-500" />
           <MetricBox label="Invites Left" value={remaining} color={remaining > 0 ? 'text-amber-500' : 'text-green-500'} />
           <MetricBox label="People In" value={metrics.attendees_checked} color="text-green-500" />
           <MetricBox label="People Left" value={remainingAttendees} color={remainingAttendees > 0 ? 'text-amber-500' : 'text-green-500'} />
@@ -372,7 +372,7 @@ export default function CheckInPage({ user }) {
             </p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {guest.guest_count > 1 && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full px-2.5 py-0.5">
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-full px-2.5 py-0.5">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
                   </svg>
@@ -411,7 +411,7 @@ export default function CheckInPage({ user }) {
             className={`shrink-0 w-[72px] h-[72px] rounded-[20px] font-semibold text-sm transition-all duration-150 flex flex-col items-center justify-center ${
               checked
                 ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-2 border-green-300 dark:border-green-700'
-                : 'bg-blue-500 hover:bg-blue-600 active:scale-90 text-white shadow-lg shadow-blue-500/30'
+                : 'bg-primary-500 hover:bg-primary-600 active:scale-90 text-white shadow-lg shadow-primary-500/30'
             } disabled:opacity-50 disabled:shadow-none`}
           >
             {checkingIn === guest.id ? (

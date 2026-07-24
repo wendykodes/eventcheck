@@ -84,7 +84,7 @@ export default function ActivitiesPage() {
     <div className="pt-2 space-y-4 animate-fade-in">
       <div>
         <h1 className="text-[22px] font-bold tracking-tight">Activities</h1>
-        <Link to={`/events/${eventId}`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-blue-500 transition-colors inline-flex items-center gap-1">
+        <Link to={`/events/${eventId}`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-primary-500 transition-colors inline-flex items-center gap-1">
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
           Dashboard
         </Link>

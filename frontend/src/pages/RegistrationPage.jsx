@@ -130,7 +130,7 @@ export default function RegistrationPage() {
         {steps.map((s, i) => (
           <div key={s} className="flex items-center gap-1">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold transition-all duration-300 ${
-              i < step ? 'bg-green-500 text-white' : i === step ? 'bg-blue-500 text-white ring-2 ring-blue-500/30 ring-offset-2 ring-offset-[var(--color-surface-secondary)]' : 'bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]'
+              i < step ? 'bg-green-500 text-white' : i === step ? 'bg-primary-500 text-white ring-2 ring-primary-500/30 ring-offset-2 ring-offset-[var(--color-surface-secondary)]' : 'bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]'
             }`}>
               {i < step ? (
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -154,7 +154,7 @@ export default function RegistrationPage() {
 
           {step < 4 && (
             <div className="text-center mb-6 animate-fade-in">
-              <div className="w-16 h-16 rounded-[22px] bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-500/25 ring-1 ring-white/10">
+              <div className="w-16 h-16 rounded-[22px] bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-primary-500/25 ring-1 ring-white/10">
                 <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
                 </svg>
@@ -170,7 +170,7 @@ export default function RegistrationPage() {
 
           {step === 0 && (
             <div className="card p-6 space-y-5 animate-scale-in" style={{ animationDelay: '0.05s' }}>
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-2xl p-4 text-center">
+              <div className="bg-gradient-to-br from-primary-50 to-orange-50 dark:from-primary-900/10 dark:to-orange-900/10 rounded-2xl p-4 text-center">
                 <p className="text-sm text-[var(--color-text-secondary)]">
                   Enter the access code provided by your event organizer. Each event has a unique code.
                 </p>
@@ -179,12 +179,12 @@ export default function RegistrationPage() {
                 <label className="text-sm font-semibold text-[var(--color-text-secondary)] mb-2 block">Event Access Code</label>
                 <input value={form.access_code} onChange={e => setForm(f => ({...f, access_code: e.target.value.toUpperCase()}))}
                   placeholder="e.g. WEDDING2026"
-                  className="input text-center text-xl font-bold tracking-[0.3em] uppercase bg-[var(--color-surface-hover)] border-2 border-transparent focus:border-blue-500/30 h-14 rounded-2xl"
+                  className="input text-center text-xl font-bold tracking-[0.3em] uppercase bg-[var(--color-surface-hover)] border-2 border-transparent focus:border-primary-500/30 h-14 rounded-2xl"
                   autoFocus
                   onKeyDown={e => { if (e.key === 'Enter') lookupCode(); }} />
               </div>
               <button onClick={lookupCode} disabled={loading || !form.access_code.trim()}
-                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20">
+                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2.5">
                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
@@ -194,7 +194,7 @@ export default function RegistrationPage() {
               </button>
               <p className="text-center text-xs text-[var(--color-text-secondary)]">
                 Already have an account?{' '}
-                <Link to="/login" className="text-blue-500 hover:underline font-medium">Log in</Link>
+                <Link to="/login" className="text-primary-500 hover:underline font-medium">Log in</Link>
               </p>
             </div>
           )}
@@ -230,7 +230,7 @@ export default function RegistrationPage() {
               </div>
 
               <button onClick={() => { if (!form.name.trim()) return toast.error('Name is required'); setStep(2); }}
-                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20">
+                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20">
                 Continue
               </button>
               <button onClick={() => setStep(0)} className="btn btn-ghost w-full text-sm text-[var(--color-text-secondary)]">Back</button>
@@ -240,8 +240,8 @@ export default function RegistrationPage() {
           {step === 2 && (
             <div className="card p-6 space-y-5 animate-scale-in" style={{ animationDelay: '0.05s' }}>
               <div className="text-center">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <div className="w-12 h-12 rounded-2xl bg-primary-500/10 flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                   </svg>
                 </div>
@@ -252,7 +252,7 @@ export default function RegistrationPage() {
               <div className="flex justify-center gap-2.5 mb-2">
                 {Array.from({ length: MAX_PIN_LEN }).map((_, i) => (
                   <div key={i} className={`w-10 h-12 rounded-xl flex items-center justify-center text-xl font-bold transition-all duration-200 border-2 ${
-                    pin[i] ? 'bg-blue-500 border-blue-500 text-white scale-105 shadow-md shadow-blue-500/30' : i === activeIdx ? 'bg-[var(--color-surface)] border-blue-500' : 'bg-[var(--color-surface-hover)] border-transparent'
+                    pin[i] ? 'bg-primary-500 border-primary-500 text-white scale-105 shadow-md shadow-primary-500/30' : i === activeIdx ? 'bg-[var(--color-surface)] border-primary-500' : 'bg-[var(--color-surface-hover)] border-transparent'
                   }`}>
                     {pin[i] ? '●' : ''}
                   </div>
@@ -296,7 +296,7 @@ export default function RegistrationPage() {
               </div>
 
               <button onClick={() => { setStep(3); }} disabled={pinStr.length < 4 || !!pinError}
-                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20 disabled:shadow-none">
+                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20 disabled:shadow-none">
                 Continue
               </button>
               <button onClick={() => setStep(1)} className="btn btn-ghost w-full text-sm text-[var(--color-text-secondary)]">Back</button>
@@ -306,8 +306,8 @@ export default function RegistrationPage() {
           {step === 3 && (
             <div className="card p-6 space-y-5 animate-scale-in" style={{ animationDelay: '0.05s' }}>
               <div className="text-center">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <div className="w-12 h-12 rounded-2xl bg-primary-500/10 flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                   </svg>
                 </div>
@@ -318,7 +318,7 @@ export default function RegistrationPage() {
               <div className="flex justify-center gap-2.5 mb-2">
                 {Array.from({ length: MAX_PIN_LEN }).map((_, i) => (
                   <div key={i} className={`w-10 h-12 rounded-xl flex items-center justify-center text-xl font-bold transition-all duration-200 border-2 ${
-                    confirmPin[i] ? 'bg-blue-500 border-blue-500 text-white scale-105 shadow-md shadow-blue-500/30' : i === confirmActiveIdx ? 'bg-[var(--color-surface)] border-blue-500' : 'bg-[var(--color-surface-hover)] border-transparent'
+                    confirmPin[i] ? 'bg-primary-500 border-primary-500 text-white scale-105 shadow-md shadow-primary-500/30' : i === confirmActiveIdx ? 'bg-[var(--color-surface)] border-primary-500' : 'bg-[var(--color-surface-hover)] border-transparent'
                   }`}>
                     {confirmPin[i] ? '●' : ''}
                   </div>
@@ -361,7 +361,7 @@ export default function RegistrationPage() {
               </div>
 
               <button onClick={submit} disabled={loading || confirmPinStr !== pinStr || pinStr.length < 4}
-                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20 disabled:shadow-none">
+                className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20 disabled:shadow-none">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2.5">
                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
@@ -390,7 +390,7 @@ export default function RegistrationPage() {
                     </p>
                     <p className="text-sm text-[var(--color-text-secondary)] mt-1">You can now log in with your PIN.</p>
                   </div>
-                  <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20">
+                  <Link to="/login" className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20">
                     Log In
                   </Link>
                 </div>
@@ -436,10 +436,10 @@ export default function RegistrationPage() {
                     </div>
                   </div>
                   <Link to={`/pending-approval/${result.request_id}`}
-                    className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-blue-500/20">
+                    className="btn btn-primary w-full h-13 rounded-2xl text-[17px] font-semibold shadow-lg shadow-primary-500/20">
                     Track Approval Status
                   </Link>
-                  <Link to="/login" className="block text-center text-sm text-blue-500 hover:underline font-medium">
+                  <Link to="/login" className="block text-center text-sm text-primary-500 hover:underline font-medium">
                     Return to Login
                   </Link>
                 </div>

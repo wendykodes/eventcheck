@@ -55,7 +55,7 @@ export default function AcceptInvitationPage() {
     return (
       <div className="min-h-dvh flex items-center justify-center p-6 bg-[var(--color-surface-secondary)]">
         <div className="text-center animate-pulse">
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/20 mx-auto mb-4" />
+          <div className="w-12 h-12 rounded-2xl bg-primary-500/20 mx-auto mb-4" />
           <p className="text-sm text-[var(--color-text-secondary)]">Loading invitation...</p>
         </div>
       </div>
@@ -83,7 +83,7 @@ export default function AcceptInvitationPage() {
     <div className="min-h-dvh flex items-center justify-center p-6 bg-[var(--color-surface-secondary)]">
       <div className="w-full max-w-sm animate-fade-in-up">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-blue-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/25">
+          <div className="w-14 h-14 rounded-2xl bg-primary-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-500/25">
             <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
             </svg>

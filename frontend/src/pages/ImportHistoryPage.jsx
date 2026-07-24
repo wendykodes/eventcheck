@@ -69,7 +69,7 @@ export default function ImportHistoryPage() {
                   <div className="grid grid-cols-3 gap-2 mb-3">
                     {[
                       { label: 'Imported', value: item.imported, color: 'text-green-500' },
-                      { label: 'Updated', value: item.updated, color: 'text-blue-500' },
+                      { label: 'Updated', value: item.updated, color: 'text-primary-500' },
                       { label: 'Skipped', value: item.skipped, color: 'text-amber-500' },
                       { label: 'Duplicates', value: item.duplicate_count, color: 'text-amber-500' },
                       { label: 'Failed', value: item.failed, color: 'text-red-500' },

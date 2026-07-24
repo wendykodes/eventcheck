@@ -162,7 +162,7 @@ export default function GuestListPage() {
       <div className="flex items-center justify-between flex-wrap gap-2 px-1">
         <div>
           <h1 className="text-[22px] font-bold tracking-tight">Guests</h1>
-          <Link to={`/events/${eventId}`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-blue-500 transition-colors">← Dashboard</Link>
+          <Link to={`/events/${eventId}`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-primary-500 transition-colors">← Dashboard</Link>
         </div>
         <div className="flex gap-2">
           <Link to={`/events/${eventId}/import`} className="btn btn-secondary btn-sm">
@@ -216,8 +216,8 @@ export default function GuestListPage() {
       </div>
 
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 px-1 py-2 bg-blue-500/10 rounded-xl animate-scale-in">
-          <span className="text-sm font-medium text-blue-500">{selected.size} selected</span>
+        <div className="flex items-center gap-2 px-1 py-2 bg-primary-500/10 rounded-xl animate-scale-in">
+          <span className="text-sm font-medium text-primary-500">{selected.size} selected</span>
           <div className="flex-1" />
           <select value={bulkAction} onChange={e => { setBulkAction(e.target.value); setBulkValue(''); if (e.target.value !== 'delete') setShowBulkModal(true); }}
             className="input input-sm text-xs max-w-[140px]">
@@ -310,7 +310,7 @@ export default function GuestListPage() {
                 <tr className="text-left text-[12px] font-semibold text-[var(--color-text-secondary)] bg-[var(--color-surface-hover)]">
                   <th className="py-3.5 pl-4 w-10">
                     <input type="checkbox" checked={selectAll && filtered.length > 0} onChange={toggleSelectAll}
-                      className="w-4 h-4 rounded border-[var(--color-border)] accent-blue-500 cursor-pointer" />
+                      className="w-4 h-4 rounded border-[var(--color-border)] accent-primary-500 cursor-pointer" />
                   </th>
                   <th className="py-3.5 px-2">Name</th>
                   <th className="py-3.5 px-2">Phone</th>
@@ -325,10 +325,10 @@ export default function GuestListPage() {
                   <tr key={guest.id} className="hover:bg-[var(--color-surface-hover)] transition-colors animate-fade-in" style={{animationDelay: `${i*20}ms`}}>
                     <td className="py-3 pl-4">
                       <input type="checkbox" checked={selected.has(guest.id)} onChange={() => toggleSelect(guest.id)}
-                        className="w-4 h-4 rounded border-[var(--color-border)] accent-blue-500 cursor-pointer" />
+                        className="w-4 h-4 rounded border-[var(--color-border)] accent-primary-500 cursor-pointer" />
                     </td>
                     <td className="py-3 px-2">
-                      <Link to={`/events/${eventId}/guests/${guest.id}`} className="font-semibold text-blue-500 hover:text-blue-600 transition-colors">
+                      <Link to={`/events/${eventId}/guests/${guest.id}`} className="font-semibold text-primary-500 hover:text-primary-600 transition-colors">
                         {guest.name}
                       </Link>
                     </td>
@@ -360,9 +360,9 @@ export default function GuestListPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-3 min-w-0">
                     <input type="checkbox" checked={selected.has(guest.id)} onChange={() => toggleSelect(guest.id)}
-                      className="w-4 h-4 rounded border-[var(--color-border)] accent-blue-500 cursor-pointer mt-1" />
+                      className="w-4 h-4 rounded border-[var(--color-border)] accent-primary-500 cursor-pointer mt-1" />
                     <div className="min-w-0">
-                      <Link to={`/events/${eventId}/guests/${guest.id}`} className="font-bold text-[16px] text-blue-500 hover:text-blue-600 transition-colors block leading-tight">
+                      <Link to={`/events/${eventId}/guests/${guest.id}`} className="font-bold text-[16px] text-primary-500 hover:text-primary-600 transition-colors block leading-tight">
                         {guest.name}
                       </Link>
                       <div className="text-xs text-[var(--color-text-secondary)] mt-1 flex flex-wrap gap-x-2 gap-y-1 items-center">

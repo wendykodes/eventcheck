@@ -48,10 +48,10 @@ export default function LeaderboardPage() {
       {events.length > 0 && (
         <div className="flex flex-wrap gap-1.5 px-1">
           <button onClick={() => setSelectedEvent(null)}
-            className={`btn btn-sm rounded-full text-xs px-3.5 py-1.5 transition-all ${!selectedEvent ? 'bg-[var(--color-blue-500)] text-white shadow-sm' : 'btn-secondary'}`}>All Events</button>
+            className={`btn btn-sm rounded-full text-xs px-3.5 py-1.5 transition-all ${!selectedEvent ? 'bg-primary-500 text-white shadow-sm' : 'btn-secondary'}`}>All Events</button>
           {events.map(e => (
             <button key={e.id} onClick={() => setSelectedEvent(e.id)}
-              className={`btn btn-sm rounded-full text-xs px-3.5 py-1.5 transition-all ${selectedEvent === e.id ? 'bg-[var(--color-blue-500)] text-white shadow-sm' : 'btn-secondary'}`}>{e.name}</button>
+              className={`btn btn-sm rounded-full text-xs px-3.5 py-1.5 transition-all ${selectedEvent === e.id ? 'bg-primary-500 text-white shadow-sm' : 'btn-secondary'}`}>{e.name}</button>
           ))}
         </div>
       )}

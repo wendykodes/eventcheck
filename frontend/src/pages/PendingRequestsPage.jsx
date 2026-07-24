@@ -64,7 +64,7 @@ export default function PendingRequestsPage() {
                   <div className="text-sm text-[var(--color-text-secondary)] space-y-0.5 mt-1">
                     {r.phone && <p>📞 {r.phone}</p>}
                     {r.email && <p>✉ {r.email}</p>}
-                    <p className="text-blue-500 font-medium">{r.event_name}</p>
+                    <p className="text-primary-500 font-medium">{r.event_name}</p>
                     <p className="text-[12px]">{new Date(r.created_at + 'Z').toLocaleString()}</p>
                   </div>
                 </div>

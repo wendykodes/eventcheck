@@ -134,7 +134,7 @@ export default function EventsPage() {
   const methodBadge = {
     approval: 'badge badge-orange',
     auto_approve: 'badge badge-green',
-    invitation_only: 'badge badge-blue',
+    invitation_only: 'badge badge-primary',
     manual_only: 'badge badge-gray',
   };
 
@@ -227,7 +227,7 @@ export default function EventsPage() {
                         </button>
                       </>
                     ) : (
-                      <button onClick={() => setCodeModal(event)} className="text-[12px] text-blue-500 hover:underline font-medium">Generate Code</button>
+                      <button onClick={() => setCodeModal(event)} className="text-[12px] text-primary-500 hover:underline font-medium">Generate Code</button>
                     )}
                   </div>
                 </div>

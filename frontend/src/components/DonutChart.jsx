@@ -1,4 +1,4 @@
-export default function DonutChart({ value, max, size = 72, strokeWidth = 6, color = '#0071e3' }) {
+export default function DonutChart({ value, max, size = 72, strokeWidth = 6, color = '#ff3b30' }) {
   const pct = max > 0 ? Math.min(value / max, 1) : 0;
   const r = (size - strokeWidth) / 2;
   const circ = 2 * Math.PI * r;

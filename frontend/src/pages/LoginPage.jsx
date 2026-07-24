@@ -86,7 +86,7 @@ export default function LoginPage({ onLogin }) {
         <div className="min-h-dvh flex items-center justify-center bg-[#f5f5f7] dark:bg-[#000] p-4">
           <div className="w-full max-w-[360px] animate-fade-in-up">
             <div className="text-center mb-10">
-              <div className="w-20 h-20 rounded-[22px] bg-blue-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-500/25">
+              <div className="w-20 h-20 rounded-[22px] bg-primary-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-primary-500/25">
                 <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                 </svg>
@@ -100,7 +100,7 @@ export default function LoginPage({ onLogin }) {
               <div className="flex justify-center gap-2.5 mb-8">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className={`w-10 h-12 rounded-xl flex items-center justify-center text-xl font-bold transition-all duration-200 border-2 ${
-                    newPin[i] ? 'bg-blue-500 border-blue-500 text-white scale-105 shadow-md shadow-blue-500/30' : i === newActiveIdx ? 'bg-white dark:bg-[#2c2c2e] border-blue-500' : 'bg-[#f5f5f7] dark:bg-[#2c2c2e] border-transparent'
+                    newPin[i] ? 'bg-primary-500 border-primary-500 text-white scale-105 shadow-md shadow-primary-500/30' : i === newActiveIdx ? 'bg-white dark:bg-[#2c2c2e] border-primary-500' : 'bg-[#f5f5f7] dark:bg-[#2c2c2e] border-transparent'
                   }`}>
                     {newPin[i] ? '●' : ''}
                   </div>
@@ -137,8 +137,8 @@ export default function LoginPage({ onLogin }) {
                   </button>
                 </div>
 
-                <button type="submit" disabled={newPinStr.length < 4}
-                  className="w-full h-[52px] rounded-2xl bg-blue-500 hover:bg-blue-600 disabled:bg-[#d2d2d7] dark:disabled:bg-[#3a3a3c] text-white font-semibold text-[17px] mt-5 transition-all active:scale-[0.98] disabled:active:scale-100 shadow-lg shadow-blue-500/20 disabled:shadow-none"
+                 <button type="submit" disabled={newPinStr.length < 4}
+                  className="w-full h-[52px] rounded-2xl bg-primary-500 hover:bg-primary-600 disabled:bg-[#d2d2d7] dark:disabled:bg-[#3a3a3c] text-white font-semibold text-[17px] mt-5 transition-all active:scale-[0.98] disabled:active:scale-100 shadow-lg shadow-primary-500/20 disabled:shadow-none"
                 >
                   {loading ? 'Setting up...' : 'Continue'}
                 </button>
@@ -153,7 +153,7 @@ export default function LoginPage({ onLogin }) {
       <div className="min-h-dvh flex items-center justify-center bg-[#f5f5f7] dark:bg-[#000] p-4">
         <div className="w-full max-w-[360px] animate-fade-in-up">
           <div className="text-center mb-10">
-            <div className="w-20 h-20 rounded-[22px] bg-blue-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-500/25">
+            <div className="w-20 h-20 rounded-[22px] bg-primary-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-primary-500/25">
               <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               </svg>
@@ -167,7 +167,7 @@ export default function LoginPage({ onLogin }) {
               <div className="flex justify-center gap-2.5 mb-8">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className={`w-10 h-12 rounded-xl flex items-center justify-center text-xl font-bold transition-all duration-200 border-2 ${
-                    confirmPin[i] ? 'bg-blue-500 border-blue-500 text-white scale-105 shadow-md shadow-blue-500/30' : i === confirmActiveIdx ? 'bg-white dark:bg-[#2c2c2e] border-blue-500' : 'bg-[#f5f5f7] dark:bg-[#2c2c2e] border-transparent'
+                    confirmPin[i] ? 'bg-primary-500 border-primary-500 text-white scale-105 shadow-md shadow-primary-500/30' : i === confirmActiveIdx ? 'bg-white dark:bg-[#2c2c2e] border-primary-500' : 'bg-[#f5f5f7] dark:bg-[#2c2c2e] border-transparent'
                   }`}>
                     {confirmPin[i] ? '●' : ''}
                   </div>
@@ -209,7 +209,7 @@ export default function LoginPage({ onLogin }) {
               )}
 
               <button type="submit" disabled={loading || confirmPinStr.length < 4 || newPinStr !== confirmPinStr}
-                className="w-full h-[52px] rounded-2xl bg-blue-500 hover:bg-blue-600 disabled:bg-[#d2d2d7] dark:disabled:bg-[#3a3a3c] text-white font-semibold text-[17px] mt-5 transition-all active:scale-[0.98] disabled:active:scale-100 shadow-lg shadow-blue-500/20 disabled:shadow-none"
+                className="w-full h-[52px] rounded-2xl bg-primary-500 hover:bg-primary-600 disabled:bg-[#d2d2d7] dark:disabled:bg-[#3a3a3c] text-white font-semibold text-[17px] mt-5 transition-all active:scale-[0.98] disabled:active:scale-100 shadow-lg shadow-primary-500/20 disabled:shadow-none"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2.5">
@@ -229,7 +229,7 @@ export default function LoginPage({ onLogin }) {
     <div className="min-h-dvh flex items-center justify-center bg-[#f5f5f7] dark:bg-[#000] p-4">
       <div className="w-full max-w-[360px] animate-fade-in-up">
         <div className="text-center mb-10">
-          <div className="w-20 h-20 rounded-[22px] bg-blue-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-500/25">
+          <div className="w-20 h-20 rounded-[22px] bg-primary-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-primary-500/25">
             <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -243,7 +243,7 @@ export default function LoginPage({ onLogin }) {
             <div className="flex justify-center gap-2.5 mb-8">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className={`w-10 h-12 rounded-xl flex items-center justify-center text-xl font-bold transition-all duration-200 border-2 ${
-                  pin[i] ? 'bg-blue-500 border-blue-500 text-white scale-105 shadow-md shadow-blue-500/30' : i === activeIdx ? 'bg-white dark:bg-[#2c2c2e] border-blue-500' : 'bg-[#f5f5f7] dark:bg-[#2c2c2e] border-transparent'
+                  pin[i] ? 'bg-primary-500 border-primary-500 text-white scale-105 shadow-md shadow-primary-500/30' : i === activeIdx ? 'bg-white dark:bg-[#2c2c2e] border-primary-500' : 'bg-[#f5f5f7] dark:bg-[#2c2c2e] border-transparent'
                 }`}>
                   {pin[i] ? '●' : ''}
                 </div>
@@ -275,7 +275,7 @@ export default function LoginPage({ onLogin }) {
             </div>
 
             <button type="submit" disabled={loading || pinStr.length < 4}
-              className="w-full h-[52px] rounded-2xl bg-blue-500 hover:bg-blue-600 disabled:bg-[#d2d2d7] dark:disabled:bg-[#3a3a3c] text-white font-semibold text-[17px] mt-5 transition-all active:scale-[0.98] disabled:active:scale-100 shadow-lg shadow-blue-500/20 disabled:shadow-none"
+              className="w-full h-[52px] rounded-2xl bg-primary-500 hover:bg-primary-600 disabled:bg-[#d2d2d7] dark:disabled:bg-[#3a3a3c] text-white font-semibold text-[17px] mt-5 transition-all active:scale-[0.98] disabled:active:scale-100 shadow-lg shadow-primary-500/20 disabled:shadow-none"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2.5">
@@ -288,7 +288,7 @@ export default function LoginPage({ onLogin }) {
         </form>
 
         <p className="text-center text-xs text-[#86868b] mt-6">PIN-only authentication</p>
-        <Link to="/register" className="block text-center text-sm text-blue-500 hover:text-blue-600 mt-3 font-medium">
+        <Link to="/register" className="block text-center text-sm text-primary-500 hover:text-primary-600 mt-3 font-medium">
           Join Event Staff
         </Link>
       </div>

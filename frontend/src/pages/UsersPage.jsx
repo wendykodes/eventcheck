@@ -223,7 +223,7 @@ export default function UsersPage() {
               <div className="flex flex-wrap gap-2">
                 {events.map(e => (
                   <label key={e.id} className="flex items-center gap-1.5 text-sm cursor-pointer px-3 py-2 rounded-xl bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] transition-colors">
-                    <input type="checkbox" checked={form.event_ids.includes(e.id)} onChange={() => toggleEvent(e.id)} className="accent-blue-500" />
+                    <input type="checkbox" checked={form.event_ids.includes(e.id)} onChange={() => toggleEvent(e.id)} className="accent-primary-500" />
                     {e.name}
                   </label>
                 ))}
@@ -244,14 +244,14 @@ export default function UsersPage() {
           {users.map((u, i) => (
             <div key={u.id} className="p-4 flex items-center justify-between animate-fade-in bg-[var(--color-surface)]" style={{animationDelay: `${i*40}ms`}}>
               <Link to={`/staff/${u.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 flex items-center justify-center text-[16px] font-bold shrink-0">
+                <div className="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-500 flex items-center justify-center text-[16px] font-bold shrink-0">
                   {u.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-[15px]">{u.name}</span>
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
-                      u.role === 'admin' ? 'badge-blue' : 'badge-gray'
+                      u.role === 'admin' ? 'badge-primary' : 'badge-gray'
                     }`}>{u.role}</span>
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
                       u.status === 'active' ? 'badge-green' : 'badge-red'
@@ -337,8 +337,8 @@ export default function UsersPage() {
         ) : (
           <div className="space-y-5">
             <div className="text-center">
-              <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto mb-3">
-                <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <div className="w-12 h-12 rounded-full bg-primary-500/10 flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
                 </svg>
               </div>
@@ -385,8 +385,8 @@ export default function UsersPage() {
                 <label className="text-xs font-semibold text-[var(--color-text-secondary)] block mb-2">Assign activities (optional)</label>
                 <div className="grid grid-cols-2 gap-2">
                   {activitiesForInvite.map(a => (
-                    <label key={a.id} className="flex items-center gap-2.5 text-sm cursor-pointer px-3.5 py-2.5 rounded-xl bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] transition-colors has-[:checked]:bg-blue-50 has-[:checked]:text-blue-600 dark:has-[:checked]:bg-blue-900/20 dark:has-[:checked]:text-blue-400 has-[:checked]:ring-1 has-[:checked]:ring-blue-500/30">
-                      <input type="checkbox" checked={inviteForm.activity_ids.includes(a.id)} onChange={() => toggleActivityForInvite(a.id)} className="accent-blue-500" />
+                    <label key={a.id} className="flex items-center gap-2.5 text-sm cursor-pointer px-3.5 py-2.5 rounded-xl bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] transition-colors has-[:checked]:bg-primary-50 has-[:checked]:text-primary-600 dark:has-[:checked]:bg-primary-900/20 dark:has-[:checked]:text-primary-400 has-[:checked]:ring-1 has-[:checked]:ring-primary-500/30">
+                      <input type="checkbox" checked={inviteForm.activity_ids.includes(a.id)} onChange={() => toggleActivityForInvite(a.id)} className="accent-primary-500" />
                       {a.name}
                     </label>
                   ))}

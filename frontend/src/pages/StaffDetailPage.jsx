@@ -65,7 +65,7 @@ export default function StaffDetailPage() {
 
   return (
     <div className="pt-2 space-y-5 animate-fade-in">
-      <Link to="/users" className="text-[13px] text-[var(--color-text-secondary)] hover:text-blue-500 transition-colors inline-flex items-center gap-1">
+      <Link to="/users" className="text-[13px] text-[var(--color-text-secondary)] hover:text-primary-500 transition-colors inline-flex items-center gap-1">
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
         Staff
       </Link>
@@ -73,13 +73,13 @@ export default function StaffDetailPage() {
       {/* Profile */}
       <div className="card p-5 animate-slide-up">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 flex items-center justify-center text-xl font-bold shrink-0">
+          <div className="w-14 h-14 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-500 flex items-center justify-center text-xl font-bold shrink-0">
             {user.name.charAt(0).toUpperCase()}
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-[22px] font-bold tracking-tight">{user.name}</h1>
-              <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${user.role === 'admin' ? 'badge-blue' : 'badge-gray'}`}>{user.role}</span>
+              <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${user.role === 'admin' ? 'badge-primary' : 'badge-gray'}`}>{user.role}</span>
               <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${getStatusBadgeClass(user.status)}`}>{user.status}</span>
             </div>
             <p className="text-[13px] text-[var(--color-text-secondary)] mt-0.5">
@@ -93,7 +93,7 @@ export default function StaffDetailPage() {
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
         <div className="card p-4">
-          <div className="text-[24px] font-bold text-blue-500"><span className="animate-count-up">{today.checkins}</span></div>
+          <div className="text-[24px] font-bold text-primary-500"><span className="animate-count-up">{today.checkins}</span></div>
           <div className="text-[11px] text-[var(--color-text-secondary)]">Today Check-Ins</div>
           <div className="text-[11px] text-[var(--color-text-secondary)] opacity-70">{today.guests} guests · {today.attendees} attendees</div>
         </div>
@@ -192,8 +192,8 @@ export default function StaffDetailPage() {
             {timeline.map((t, i) => (
               <div key={i} className="p-3 flex items-center gap-3 text-sm animate-fade-in bg-[var(--color-surface)]" style={{animationDelay: `${i*20}ms`}}>
                 {t.type === 'login' ? (
-                  <div className="w-7 h-7 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center shrink-0">
-                    <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <div className="w-7 h-7 rounded-full bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center shrink-0">
+                    <svg className="w-3.5 h-3.5 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
                     </svg>
                   </div>
@@ -208,7 +208,7 @@ export default function StaffDetailPage() {
                   {t.type === 'login' ? (
                     <p className="font-medium text-[13px]">Logged in</p>
                   ) : (
-                    <p className="font-medium text-[13px]">Checked in <span className="text-blue-500">{t.guest_name}</span> at {t.activity_name}</p>
+                    <p className="font-medium text-[13px]">Checked in <span className="text-primary-500">{t.guest_name}</span> at {t.activity_name}</p>
                   )}
                   <p className="text-[11px] text-[var(--color-text-secondary)]">{new Date(t.timestamp).toLocaleString()}</p>
                 </div>
@@ -237,7 +237,7 @@ export default function StaffDetailPage() {
                   key={btn.status}
                   onClick={() => handleUpdateStatus(btn.status)}
                   disabled={actionLoading || user.status === btn.status}
-                  className={`btn btn-sm ${btn.color} ${user.status === btn.status ? 'ring-2 ring-offset-2 ring-blue-500 opacity-100 scale-105' : 'opacity-70'}`}
+                  className={`btn btn-sm ${btn.color} ${user.status === btn.status ? 'ring-2 ring-offset-2 ring-primary-500 opacity-100 scale-105' : 'opacity-70'}`}
                 >
                   {btn.label}
                 </button>
