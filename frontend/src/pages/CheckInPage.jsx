@@ -88,12 +88,9 @@ export default function CheckInPage({ user }) {
     try {
       const guestsData = await api.getGuests(selectedEvent, q);
       const ciMap = {};
-      await Promise.all(guestsData.map(async (g) => {
-        try {
-          const cs = await api.getGuestCheckins(g.id);
-          ciMap[g.id] = cs;
-        } catch {}
-      }));
+      guestsData.forEach(g => {
+        ciMap[g.id] = g.checkins || [];
+      });
       setCheckedIn(ciMap);
       setGuests(guestsData);
     } catch {} finally { setLoading(false); }

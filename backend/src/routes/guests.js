@@ -21,6 +21,28 @@ router.get('/', (req, res) => {
   }
   query += ' ORDER BY g.name ASC';
   const guests = db.prepare(query).all(...params);
+
+  // Fetch checkins for this event and group them by guest_id to optimize frontend load
+  const checkins = db.prepare(`
+    SELECT c.id, c.guest_id, c.activity_id, c.checked_in_at, c.staff_id, u.name AS staff_name
+    FROM checkins c
+    JOIN activities a ON a.id = c.activity_id
+    LEFT JOIN users u ON u.id = c.staff_id
+    WHERE a.event_id = ?
+  `).all(event_id);
+
+  const checkinsByGuest = {};
+  for (const ci of checkins) {
+    if (!checkinsByGuest[ci.guest_id]) {
+      checkinsByGuest[ci.guest_id] = [];
+    }
+    checkinsByGuest[ci.guest_id].push(ci);
+  }
+
+  for (const g of guests) {
+    g.checkins = checkinsByGuest[g.id] || [];
+  }
+
   res.json(guests);
 });
 
@@ -34,6 +56,15 @@ router.get('/pending/count', (req, res) => {
 router.get('/:id', (req, res) => {
   const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(req.params.id);
   if (!guest) return res.status(404).json({ error: 'Guest not found' });
+  
+  const checkins = db.prepare(`
+    SELECT c.id, c.guest_id, c.activity_id, c.checked_in_at, c.staff_id, u.name AS staff_name
+    FROM checkins c
+    LEFT JOIN users u ON u.id = c.staff_id
+    WHERE c.guest_id = ?
+  `).all(guest.id);
+  guest.checkins = checkins;
+
   res.json(guest);
 });
 

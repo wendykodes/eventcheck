@@ -337,7 +337,7 @@ export default function GuestListPage() {
                     <td className="py-3 px-2 text-[var(--color-text-secondary)]">{guest.table_number || '—'}</td>
                     {displayActivities.map(a => (
                       <td key={a.id} className="py-3 px-2 text-center">
-                        <CheckStatus guestId={guest.id} activityId={a.id} />
+                        <CheckStatus checkins={guest.checkins} activityId={a.id} />
                       </td>
                     ))}
                     <td className="py-3 px-2">
@@ -384,7 +384,7 @@ export default function GuestListPage() {
                 {/* Check-in stations indicators for mobile */}
                 <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[var(--color-border)]/50">
                   {displayActivities.map(a => (
-                    <CheckStatusBadge key={a.id} guestId={guest.id} activity={a} />
+                    <CheckStatusBadge key={a.id} checkins={guest.checkins} activity={a} />
                   ))}
                 </div>
               </div>
@@ -416,19 +416,10 @@ export default function GuestListPage() {
   );
 }
 
-function CheckStatus({ guestId, activityId }) {
-  const [ci, setCi] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    api.getGuestCheckins(guestId).then(cs => {
-      if (cancelled) return;
-      const match = cs.find(c => c.activity_id === activityId);
-      if (match) setCi(match);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [guestId, activityId]);
-  return ci ? (
-    <span className="inline-flex text-green-500" title={ci.checked_in_at}>
+function CheckStatus({ checkins = [], activityId }) {
+  const match = checkins.find(c => c.activity_id === activityId);
+  return match ? (
+    <span className="inline-flex text-green-500" title={match.checked_in_at}>
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
@@ -438,19 +429,10 @@ function CheckStatus({ guestId, activityId }) {
   );
 }
 
-function CheckStatusBadge({ guestId, activity }) {
-  const [ci, setCi] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    api.getGuestCheckins(guestId).then(cs => {
-      if (cancelled) return;
-      const match = cs.find(c => c.activity_id === activity.id);
-      if (match) setCi(match);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [guestId, activity.id]);
+function CheckStatusBadge({ checkins = [], activity }) {
+  const match = checkins.find(c => c.activity_id === activity.id);
   
-  if (ci) {
+  if (match) {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400 font-medium">
         <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
