@@ -19,11 +19,14 @@ if (process.env.JWT_SECRET) {
 } else if (existsSync(SECRET_FILE)) {
   SECRET = readFileSync(SECRET_FILE, 'utf8').trim();
 } else {
-  SECRET = crypto.randomBytes(32).toString('hex');
+  // Generate a deterministic fallback so tokens survive ephemeral container restarts.
+  // For production security, set the JWT_SECRET environment variable on Railway.
+  SECRET = crypto.createHash('sha256').update('eventcheck-default-secret-change-me').digest('hex');
+  console.warn('Warning: Using default JWT secret. Set JWT_SECRET env variable for production security.');
   try {
     writeFileSync(SECRET_FILE, SECRET);
   } catch (err) {
-    console.warn('Warning: Could not save JWT secret to file. Using ephemeral in-memory secret instead:', err.message);
+    console.warn('Could not persist JWT secret to file:', err.message);
   }
 }
 

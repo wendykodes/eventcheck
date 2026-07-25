@@ -15,7 +15,7 @@ export function requireAuth(req, res, next) {
   if (!user) {
     return res.status(401).json({ error: 'User does not exist' });
   }
-  if (payload.sessionId && payload.sessionId !== user.current_session_id) {
+  if (payload.sessionId && user.current_session_id && payload.sessionId !== user.current_session_id) {
     return res.status(401).json({ error: 'Session active on another device. Please log in again.' });
   }
   if (user.status === 'inactive' || user.status === 'suspended') {

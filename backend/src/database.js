@@ -217,7 +217,7 @@ export function initializeDatabase() {
     console.error('Phone migration notice:', e.message);
   }
 
-  // 1. One-time clean-up of mock data to ensure clean database in production
+  // One-time clean-up of the mock "Smith-Johnson" event (from legacy seeding)
   try {
     const mockEvent = db.prepare("SELECT id FROM events WHERE name = 'Smith-Johnson Wedding Reception'").get();
     if (mockEvent) {
@@ -231,9 +231,8 @@ export function initializeDatabase() {
       db.prepare('DELETE FROM invitations WHERE event_id = ?').run(eventId);
       db.prepare('DELETE FROM import_history WHERE event_id = ?').run(eventId);
       db.prepare('DELETE FROM events WHERE id = ?').run(eventId);
+      console.log('Mock event cleanup completed.');
     }
-    db.prepare("DELETE FROM users WHERE name IN ('Alice', 'Bob', 'Staff Member') AND role = 'staff'").run();
-    console.log('Clean-up of mock data completed successfully.');
   } catch (err) {
     console.warn('Mock data clean-up notice:', err.message);
   }

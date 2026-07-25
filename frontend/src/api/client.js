@@ -10,10 +10,14 @@ async function request(path, options = {}) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-    throw new Error('Unauthorized');
+    // Only hard-redirect if there's genuinely no stored token (never logged in).
+    // If the token simply expired or was invalidated, let the caller handle the error
+    // instead of silently logging the user out mid-workflow.
+    if (!token) {
+      window.location.href = '/login';
+    }
+    const errData = await res.json().catch(() => ({ error: 'Unauthorized' }));
+    throw new Error(errData.error || 'Session expired. Please log in again.');
   }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
