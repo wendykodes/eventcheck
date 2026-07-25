@@ -101,7 +101,6 @@ router.post('/login', (req, res) => {
   if (matched.status === 'inactive' || matched.status === 'suspended') {
     return res.status(403).json({ error: `Account ${matched.status}. Contact an administrator.` });
   }
-  const needsPinChange = !matched.last_login;
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(matched.id);
   const events = matched.role === 'admin'
     ? db.prepare('SELECT id, name FROM events ORDER BY date DESC').all()
@@ -111,9 +110,6 @@ router.post('/login', (req, res) => {
       WHERE ue.user_id = ?
       ORDER BY e.date DESC
     `).all(matched.id);
-  if (needsPinChange) {
-    return res.json({ needs_pin_change: true, temp_token: jwt.sign({ id: matched.id, name: matched.name, role: matched.role, temp: true }, '1h') });
-  }
   const sessionId = crypto.randomBytes(16).toString('hex');
   db.prepare('UPDATE users SET current_session_id = ? WHERE id = ?').run(sessionId, matched.id);
   const token = jwt.sign({ id: matched.id, name: matched.name, role: matched.role, sessionId });
