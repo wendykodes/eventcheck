@@ -74,12 +74,11 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'event_id and name are required' });
   }
   const formattedPhone = phone ? formatUgandanPhoneNumber(phone) : null;
-  const isAdmin = req.user.role === 'admin';
-  const status = isAdmin ? 'approved' : 'pending';
+  const status = req.body.status || 'approved';
   const result = db.prepare(`
     INSERT INTO guests (event_id, name, phone, email, table_number, guest_count, category, notes, status, submitted_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(event_id, name, formattedPhone, email || null, table_number || null, guest_count || 1, category || null, notes || null, status, isAdmin ? null : req.user.id);
+  `).run(event_id, name, formattedPhone, email || null, table_number || null, guest_count || 1, category || null, notes || null, status, req.user.id);
   const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(guest);
 });
