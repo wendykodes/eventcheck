@@ -19,12 +19,13 @@ router.use(requireAdmin);
 
 router.post('/parse', (req, res) => {
   try {
-    const { file_data } = req.body;
+    const { file_data, sheet_name } = req.body;
     if (!file_data) return res.status(400).json({ error: 'file_data is required' });
 
     const buf = Buffer.from(file_data, 'base64');
     const workbook = XLSX.read(buf, { type: 'buffer', raw: false });
-    const sheetName = workbook.SheetNames[0];
+    const sheets = workbook.SheetNames;
+    const sheetName = sheet_name || sheets[0];
     if (!sheetName) return res.status(400).json({ error: 'No sheets found in file' });
 
     const sheet = workbook.Sheets[sheetName];
@@ -98,7 +99,20 @@ router.post('/parse', (req, res) => {
     let columns = [];
     if (hasHeader) {
       const headerRow = rows[headerRowIdx];
-      columns = headerRow.map((cell, colIdx) => {
+      
+      // Find the last index with a non-empty header name to avoid thousands of trailing empty columns
+      let lastNonEmptyIdx = -1;
+      for (let i = 0; i < headerRow.length; i++) {
+        if (String(headerRow[i] || '').trim() !== '') {
+          lastNonEmptyIdx = i;
+        }
+      }
+      
+      // Slice headerRow to only include columns up to the last non-empty header
+      const truncateLen = lastNonEmptyIdx !== -1 ? lastNonEmptyIdx + 1 : headerRow.length;
+      const truncatedHeaderRow = headerRow.slice(0, truncateLen);
+      
+      columns = truncatedHeaderRow.map((cell, colIdx) => {
         const val = String(cell || '').trim();
         return val || `Column_${colIdx + 1}`;
       });
@@ -106,6 +120,8 @@ router.post('/parse', (req, res) => {
       // Generate synthetic header column names based on the max row length
       let maxCols = 0;
       rows.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
+      // Cap synthetic columns to 100 to prevent empty/huge sheet column overflows
+      maxCols = Math.min(maxCols, 100);
       for (let i = 0; i < maxCols; i++) {
         columns.push(`Column_${i + 1}`);
       }
@@ -142,6 +158,8 @@ router.post('/parse', (req, res) => {
       columns,
       total_rows: rawData.length,
       sample_rows: rawData.slice(0, 5),
+      sheets,
+      selected_sheet: sheetName,
     });
   } catch (err) {
     console.error('Parse error:', err);

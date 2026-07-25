@@ -40,6 +40,9 @@ export default function ImportPage() {
   const [fileName, setFileName] = useState('');
 
   const [sessionId, setSessionId] = useState(null);
+  const [fileBase64, setFileBase64] = useState('');
+  const [sheets, setSheets] = useState([]);
+  const [selectedSheet, setSelectedSheet] = useState('');
   const [parsedColumns, setParsedColumns] = useState([]);
   const [totalRows, setTotalRows] = useState(0);
   const [sampleRows, setSampleRows] = useState([]);
@@ -125,11 +128,14 @@ export default function ImportPage() {
       reader.onload = async (evt) => {
         try {
           const base64 = evt.target.result.split(',')[1];
+          setFileBase64(base64);
           const res = await api.parseImportFile(base64, file.name);
           setSessionId(res.session_id);
           setParsedColumns(res.columns);
           setTotalRows(res.total_rows);
           setSampleRows(res.sample_rows);
+          setSheets(res.sheets || []);
+          setSelectedSheet(res.selected_sheet || '');
           setLoading(false);
           setStep(1);
         } catch (err) {
@@ -143,6 +149,22 @@ export default function ImportPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleSheetChange = async (sheetName) => {
+    setSelectedSheet(sheetName);
+    setLoading(true);
+    try {
+      const res = await api.parseImportFile(fileBase64, fileName, sheetName);
+      setSessionId(res.session_id);
+      setParsedColumns(res.columns);
+      setTotalRows(res.total_rows);
+      setSampleRows(res.sample_rows);
+      setMapping({});
+    } catch (err) {
+      toast.error(err.message);
+    }
+    setLoading(false);
+  };
 
   const onFileInput = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -248,6 +270,20 @@ export default function ImportPage() {
           <p className="text-sm text-[var(--color-text-secondary)]">
             Map columns from <strong>{fileName}</strong> ({totalRows} records found):
           </p>
+
+          {sheets && sheets.length > 1 && (
+            <div className="flex items-center gap-3 bg-[var(--color-surface-hover)]/30 rounded-xl p-3 border border-[var(--color-border)]/50">
+              <label className="w-32 text-sm font-semibold shrink-0">Workbook Sheet</label>
+              <select
+                value={selectedSheet}
+                onChange={e => handleSheetChange(e.target.value)}
+                className="input flex-1 font-medium"
+                disabled={loading}
+              >
+                {sheets.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+          )}
 
           <div className="space-y-3">
             {FIELD_OPTIONS.map(field => (
