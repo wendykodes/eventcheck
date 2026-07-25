@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import db from '../database.js';
+import db, { dbPath } from '../database.js';
 import jwt from '../jwt.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { formatUgandanPhoneNumber } from '../phoneUtils.js';
@@ -41,6 +41,14 @@ router.get('/debug-admin-status', (req, res) => {
       status: u.status,
       pin_hash_valid_for_1234: bcrypt.compareSync('1234', u.pin_hash)
     }))
+  });
+});
+
+router.get('/debug-db', (req, res) => {
+  res.json({
+    dbPath,
+    env_DATABASE_PATH: process.env.DATABASE_PATH || null,
+    NODE_ENV: process.env.NODE_ENV || null
   });
 });
 

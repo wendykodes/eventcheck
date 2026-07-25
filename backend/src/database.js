@@ -265,4 +265,5 @@ export function initializeDatabase() {
   }
 }
 
+export { dbPath };
 export default db;
