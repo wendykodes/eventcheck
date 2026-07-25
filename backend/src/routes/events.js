@@ -58,9 +58,27 @@ router.put('/:id', requireAdmin, (req, res) => {
 });
 
 router.delete('/:id', requireAdmin, (req, res) => {
-  const result = db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
-  if (result.changes === 0) return res.status(404).json({ error: 'Event not found' });
-  res.json({ ok: true });
+  const eventId = req.params.id;
+  const existing = db.prepare('SELECT id FROM events WHERE id = ?').get(eventId);
+  if (!existing) return res.status(404).json({ error: 'Event not found' });
+
+  try {
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM checkins WHERE guest_id IN (SELECT id FROM guests WHERE event_id = ?)').run(eventId);
+      db.prepare('DELETE FROM guests WHERE event_id = ?').run(eventId);
+      db.prepare('DELETE FROM activities WHERE event_id = ?').run(eventId);
+      db.prepare('DELETE FROM user_events WHERE event_id = ?').run(eventId);
+      db.prepare('DELETE FROM registration_requests WHERE event_id = ?').run(eventId);
+      db.prepare('DELETE FROM invitations WHERE event_id = ?').run(eventId);
+      db.prepare('DELETE FROM import_history WHERE event_id = ?').run(eventId);
+      db.prepare('DELETE FROM events WHERE id = ?').run(eventId);
+    });
+    tx();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete event error:', err);
+    res.status(500).json({ error: 'Failed to delete event: ' + err.message });
+  }
 });
 
 router.get('/:id/access-code', requireAdmin, (req, res) => {
