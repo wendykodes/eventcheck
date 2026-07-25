@@ -56,7 +56,10 @@ export default function GuestListPage() {
   useEffect(() => { loadPending(); }, [loadPending]);
 
   const filtered = query
-    ? guests.filter(g => g.name.toLowerCase().includes(query.toLowerCase()) || g.phone.includes(query))
+    ? guests.filter(g => 
+        (g.name || '').toLowerCase().includes(query.toLowerCase()) || 
+        (g.phone && g.phone.includes(query))
+      )
     : guests;
 
   const displayActivities = activities.slice(0, 5);
