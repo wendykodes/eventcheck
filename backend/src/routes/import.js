@@ -30,9 +30,22 @@ router.post('/parse', (req, res) => {
 
     const sheet = workbook.Sheets[sheetName];
     // Read the sheet as a 2D array to find the header row
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    let rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
     if (rows.length === 0) return res.status(400).json({ error: 'No data found in file' });
+
+    // Clean and truncate trailing empty columns from rows to avoid performance bottlenecks with large empty cells
+    let maxColIndex = 0;
+    for (const r of rows) {
+      if (!Array.isArray(r)) continue;
+      for (let c = r.length - 1; c >= maxColIndex; c--) {
+        if (String(r[c] || '').trim() !== '') {
+          maxColIndex = Math.max(maxColIndex, c);
+          break;
+        }
+      }
+    }
+    rows = rows.map(r => Array.isArray(r) ? r.slice(0, maxColIndex + 1) : []);
 
     // Keywords to find the header row in the first 15 rows
     const nameKeywords = ['name', 'guest name', 'fullname', 'full name', 'guest'];
