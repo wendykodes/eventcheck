@@ -186,6 +186,33 @@ router.post('/preview', (req, res) => {
     const categoryRaw = (categoryField ? row[categoryField] : '').toString().trim();
     const notesRaw = (notesField ? row[notesField] : '').toString().trim();
 
+    // Automatically append any other non-empty unmapped columns to notes to prevent data loss
+    const mappedFields = new Set([
+      mapping.name,
+      mapping.phone,
+      mapping.email,
+      mapping.table_number,
+      mapping.guest_count,
+      mapping.category,
+      mapping.notes
+    ].filter(Boolean));
+
+    const extraNotes = [];
+    session.columns.forEach(col => {
+      if (!mappedFields.has(col)) {
+        const val = (row[col] !== undefined ? String(row[col]) : '').trim();
+        if (val !== '') {
+          extraNotes.push(`${col}: ${val}`);
+        }
+      }
+    });
+
+    let finalNotes = notesRaw;
+    if (extraNotes.length > 0) {
+      const extraStr = extraNotes.join(', ');
+      finalNotes = notesRaw ? `${notesRaw} | ${extraStr}` : extraStr;
+    }
+
     if (!nameRaw) {
       errors.push({ row: rowNum, reason: 'Missing required field: name', data: { name: nameRaw, phone: phoneRaw } });
       continue;
@@ -251,7 +278,7 @@ router.post('/preview', (req, res) => {
       table_number: tableRaw || null,
       guest_count: guestCount,
       category: categoryRaw || null,
-      notes: notesRaw || null,
+      notes: finalNotes || null,
       warnings,
       duplicate_type: duplicateType,
       existing_guest_id: existingGuest?.id || null,
