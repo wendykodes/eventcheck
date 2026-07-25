@@ -90,16 +90,6 @@ router.post('/login', (req, res) => {
         const r = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Admin', ?, 'admin', 'active', datetime('now'))").run(pin_hash);
         matched = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
       }
-    } else if (pin === '5678') {
-      const pin_hash = bcrypt.hashSync('5678', 10);
-      const existingStaff = db.prepare("SELECT id FROM users WHERE role = 'staff' ORDER BY id ASC LIMIT 1").get();
-      if (existingStaff) {
-        db.prepare("UPDATE users SET pin_hash = ?, status = 'active', last_login = datetime('now') WHERE id = ?").run(pin_hash, existingStaff.id);
-        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(existingStaff.id);
-      } else {
-        const r = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Staff Member', ?, 'staff', 'active', datetime('now'))").run(pin_hash);
-        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
-      }
     }
   }
 
