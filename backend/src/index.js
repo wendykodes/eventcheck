@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { initializeDatabase } from './database.js';
+import db, { initializeDatabase } from './database.js';
 
 import authRoutes from './routes/auth.js';
 import eventsRoutes from './routes/events.js';
@@ -52,6 +52,21 @@ app.get('/', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Readiness: process is up AND the database is queryable AND an admin exists.
+// Returns 503 until all three hold. Reports counts only, never secrets.
+app.get('/api/ready', (req, res) => {
+  try {
+    const one = db.prepare('SELECT 1 AS ok').get();
+    const admins = db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'").get();
+    if (one && one.ok === 1 && admins && admins.c >= 1) {
+      return res.json({ status: 'ready' });
+    }
+    return res.status(503).json({ status: 'not-ready', reason: 'no-admin' });
+  } catch (e) {
+    return res.status(503).json({ status: 'not-ready', reason: 'db-error' });
+  }
 });
 
 app.use((err, req, res, next) => {
