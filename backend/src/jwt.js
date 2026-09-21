@@ -13,9 +13,21 @@ try {
   SECRET_FILE = join(__dirname, '..', '.jwt_secret');
 }
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 let SECRET;
 if (process.env.JWT_SECRET) {
   SECRET = process.env.JWT_SECRET;
+  if (isProduction && SECRET.length < 32) {
+    console.error('FATAL: JWT_SECRET must be at least 32 characters in production. Refusing to start.');
+    process.exit(1);
+  }
+} else if (isProduction) {
+  // Fail closed: production must have an explicit signing secret.
+  // No file fallback, no deterministic default. Never start authenticated
+  // traffic without it.
+  console.error('FATAL: JWT_SECRET environment variable is required in production. Refusing to start.');
+  process.exit(1);
 } else if (existsSync(SECRET_FILE)) {
   SECRET = readFileSync(SECRET_FILE, 'utf8').trim();
 } else {

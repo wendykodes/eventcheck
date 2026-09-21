@@ -233,6 +233,26 @@ export function initializeDatabase() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- RSVP Ownership Rule: RSVP belongs to invitation (event_id = isolation).
+    CREATE TABLE IF NOT EXISTS rsvps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      invitation_id INTEGER NOT NULL REFERENCES invitations(id) ON DELETE CASCADE,
+      guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK(status IN ('CONFIRMED', 'DECLINED')),
+      responded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      responded_via TEXT NOT NULL DEFAULT 'GUEST_LINK' CHECK(responded_via IN ('GUEST_LINK', 'STAFF', 'ORGANIZER', 'RAAS_OPERATOR')),
+      attendee_count INTEGER,
+      guest_note TEXT,
+      response_version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (invitation_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rsvps_event ON rsvps(event_id);
+    CREATE INDEX IF NOT EXISTS idx_rsvps_guest ON rsvps(guest_id);
+    CREATE INDEX IF NOT EXISTS idx_rsvps_invitation ON rsvps(invitation_id);
+
     CREATE TABLE IF NOT EXISTS organization_users (
       org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
