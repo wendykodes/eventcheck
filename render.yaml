@@ -6,7 +6,7 @@ services:
     name: eventcheck-backend
     runtime: node
     plan: starter
-    buildCommand: npm ci
+    buildCommand: npm ci && rm -rf backend/node_modules/better-sqlite3 node_modules/better-sqlite3 && npm rebuild better-sqlite3
     startCommand: npm start
     healthCheckPath: /api/health
     disk:
