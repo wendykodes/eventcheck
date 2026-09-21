@@ -1,0 +1,13 @@
+# Root-level config so `npx wrangler deploy` works when run from the repo root
+# (Cloudflare Workers Builds default working directory). Points at the frontend app.
+name = "eventcheck-frontend"
+compatibility_date = "2026-09-01"
+
+main = "./frontend/worker.js"
+
+[assets]
+directory = "./frontend/dist"
+not_found_handling = "single-page-application"
+
+[vars]
+BACKEND_URL = "https://natural-beauty-production-5cb5.up.railway.app"
