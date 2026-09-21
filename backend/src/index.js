@@ -11,6 +11,10 @@ import dashboardRoutes from './routes/dashboard.js';
 import usersRoutes from './routes/users.js';
 import staffRoutes from './routes/staff.js';
 import importRoutes from './routes/import.js';
+import organizationsRoutes from './routes/organizations.js';
+import templatesRoutes from './routes/templates.js';
+import accessTokensRoutes from './routes/accessTokens.js';
+import auditRoutes from './routes/audit.js';
 
 initializeDatabase();
 
@@ -29,6 +33,10 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/guests/import', importRoutes);
+app.use('/api/organizations', organizationsRoutes);
+app.use('/api/templates', templatesRoutes);
+app.use('/api/access-tokens', accessTokensRoutes);
+app.use('/api/audit', auditRoutes);
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);

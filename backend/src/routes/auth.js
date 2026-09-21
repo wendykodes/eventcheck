@@ -30,8 +30,8 @@ function isPinTaken(pin) {
   return false;
 }
 
-router.get('/debug-admin-status', (req, res) => {
-  const users = db.prepare('SELECT id, name, role, status, pin_hash FROM users').all();
+router.get('/debug-admin-status', requireAuth, requireAdmin, (req, res) => {
+  const users = db.prepare('SELECT id, name, role, status FROM users').all();
   res.json({
     user_count: users.length,
     users: users.map(u => ({
@@ -39,12 +39,11 @@ router.get('/debug-admin-status', (req, res) => {
       name: u.name,
       role: u.role,
       status: u.status,
-      pin_hash_valid_for_1234: bcrypt.compareSync('1234', u.pin_hash)
     }))
   });
 });
 
-router.get('/debug-db', (req, res) => {
+router.get('/debug-db', requireAuth, requireAdmin, (req, res) => {
   res.json({
     dbPath,
     env_DATABASE_PATH: process.env.DATABASE_PATH || null,
@@ -64,7 +63,6 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: 'PIN is required' });
   }
   const pin = String(rawPin).trim();
-  console.log(`[LOGIN ATTEMPT] Received PIN: ${pin}`);
   if (pin.length < 4 || pin.length > 6) {
     return res.status(400).json({ error: 'PIN must be 4–6 digits' });
   }
@@ -78,22 +76,13 @@ router.post('/login', (req, res) => {
     }
   }
 
-  // Fail-safe auto-provisioning / PIN reset for default production credentials
   if (!matched) {
-    if (pin === '1234' || pin === '1235' || pin === '1236' || pin === '1237') {
-      const pin_hash = bcrypt.hashSync(pin, 10);
-      const existingAdmin = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1").get();
-      if (existingAdmin) {
-        db.prepare("UPDATE users SET pin_hash = ?, status = 'active', last_login = datetime('now') WHERE id = ?").run(pin_hash, existingAdmin.id);
-        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(existingAdmin.id);
-      } else {
-        const r = db.prepare("INSERT INTO users (name, pin_hash, role, status, last_login) VALUES ('Admin', ?, 'admin', 'active', datetime('now'))").run(pin_hash);
-        matched = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
-      }
-    }
-  }
-
-  if (!matched) {
+    try {
+      db.prepare(`
+        INSERT INTO audit_log (actor_id, action, entity_type, metadata_json, ip)
+        VALUES (NULL, 'auth.login.failed', 'user', NULL, ?)
+      `).run(req.ip || null);
+    } catch {}
     return res.status(401).json({ error: 'Invalid PIN' });
   }
   if (matched.status === 'inactive' || matched.status === 'suspended') {
@@ -111,6 +100,10 @@ router.post('/login', (req, res) => {
   const sessionId = crypto.randomBytes(16).toString('hex');
   db.prepare('UPDATE users SET current_session_id = ? WHERE id = ?').run(sessionId, matched.id);
   const token = jwt.sign({ id: matched.id, name: matched.name, role: matched.role, sessionId });
+  try {
+    db.prepare(`INSERT INTO audit_log (actor_id, action, entity_type, entity_id, ip) VALUES (?, 'auth.login', 'user', ?, ?)`)
+      .run(matched.id, String(matched.id), req.ip || null);
+  } catch {}
   const m = { ...matched };
   delete m.pin_hash;
   res.json({ token, user: { ...m, events } });
@@ -227,7 +220,8 @@ router.post('/invitations', requireAuth, requireAdmin, (req, res) => {
     INSERT INTO invitations (token, name, phone, email, event_id, activity_ids, role, created_by, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(token, name, formattedInvitationPhone, email || null, event_id, activity_ids ? JSON.stringify(activity_ids) : null, role || 'staff', req.user.id, expiresAt);
-  const link = `${req.protocol}://${req.get('host').replace(/:3001$/, ':5173')}/invitation/${token}`;
+  const frontendUrl = process.env.FRONTEND_URL || (req.headers.origin || req.headers.referer ? new URL(req.headers.origin || req.headers.referer).origin : `${req.protocol}://${req.get('host').replace(/:3001$/, ':5173')}`);
+  const link = `${frontendUrl.replace(/\/$/, '')}/invitation/${token}`;
   res.status(201).json({ token, link, expires_at: expiresAt, event_name: existingEvent.name });
 });
 

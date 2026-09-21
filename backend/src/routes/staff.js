@@ -128,6 +128,10 @@ router.get('/activity-performance', (req, res) => {
 router.get('/timeline', (req, res) => {
   const { user_id, limit = 50 } = req.query;
   const userId = user_id || req.user.id;
+  // Phase 0 isolation: non-admins may only view their own timeline.
+  if (req.user.role !== 'admin' && Number(userId) !== Number(req.user.id)) {
+    return res.status(403).json({ error: 'No access to this timeline' });
+  }
 
   const raw = db.prepare(`
     SELECT c.checked_in_at AS timestamp, 'checkin' AS type,

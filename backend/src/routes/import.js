@@ -2,7 +2,7 @@ import { Router } from 'express';
 import XLSX from 'xlsx';
 import crypto from 'crypto';
 import db from '../database.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { formatUgandanPhoneNumber } from '../phoneUtils.js';
 
 const router = Router();
@@ -15,7 +15,7 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
-router.use(requireAdmin);
+router.use(requireAuth, requireAdmin);
 
 router.post('/parse', (req, res) => {
   try {

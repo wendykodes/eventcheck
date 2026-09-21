@@ -100,7 +100,13 @@ export default function EventsPage() {
     e.preventDefault();
     if (!validate()) return;
     try {
-      await api.createEvent(form);
+      await api.createEvent({
+        name: form.name.trim(),
+        date: form.date ? form.date.trim() : '',
+        venue: form.venue ? form.venue.trim() : '',
+        description: form.description ? form.description.trim() : '',
+        status: form.status || 'upcoming'
+      });
       toast.success('Event created');
       setShowForm(false);
       setForm({ name: '', date: '', venue: '', description: '', status: 'upcoming' });

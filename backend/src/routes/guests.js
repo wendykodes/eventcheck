@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import db from '../database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireEventAccess, requireEntityEventAccess, guestEventId } from '../middleware/authorize.js';
+import { auditFromReq } from '../audit.js';
 import { formatUgandanPhoneNumber } from '../phoneUtils.js';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/', (req, res) => {
+router.get('/', requireEventAccess(), (req, res) => {
   const { event_id, q, status } = req.query;
   if (!event_id) return res.status(400).json({ error: 'event_id is required' });
   let query = 'SELECT g.*, u.name AS submitted_by_name FROM guests g LEFT JOIN users u ON u.id = g.submitted_by WHERE g.event_id = ?';
@@ -46,14 +48,14 @@ router.get('/', (req, res) => {
   res.json(guests);
 });
 
-router.get('/pending/count', (req, res) => {
+router.get('/pending/count', requireEventAccess(), (req, res) => {
   const { event_id } = req.query;
   if (!event_id) return res.status(400).json({ error: 'event_id is required' });
   const count = db.prepare('SELECT COUNT(*) AS c FROM guests WHERE event_id = ? AND status = ?').get(event_id, 'pending');
   res.json({ count: count.c });
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', requireEntityEventAccess(guestEventId), (req, res) => {
   const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(req.params.id);
   if (!guest) return res.status(404).json({ error: 'Guest not found' });
   
@@ -68,37 +70,57 @@ router.get('/:id', (req, res) => {
   res.json(guest);
 });
 
-router.post('/', (req, res) => {
-  const { event_id, name, phone, email, table_number, guest_count, category, notes } = req.body;
-  if (!event_id || !name) {
-    return res.status(400).json({ error: 'event_id and name are required' });
+router.post('/', requireEventAccess(), (req, res) => {
+  try {
+    const { event_id, name, phone, email, table_number, guest_count, category, notes } = req.body;
+    if (Number(event_id) !== Number(req.eventId)) return res.status(400).json({ error: 'event_id mismatch' });
+    if (!event_id || !name || !name.trim()) {
+      return res.status(400).json({ error: 'event_id and name are required' });
+    }
+    const formattedPhone = phone && phone.trim() ? formatUgandanPhoneNumber(phone.trim()) : null;
+    const status = req.body.status || (req.user.role === 'admin' ? 'approved' : 'pending');
+    const result = db.prepare(`
+      INSERT INTO guests (event_id, name, phone, email, table_number, guest_count, category, notes, status, submitted_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event_id,
+      name.trim(),
+      formattedPhone,
+      email && email.trim() ? email.trim() : null,
+      table_number !== undefined && table_number !== null ? String(table_number).trim() : null,
+      guest_count ? Number(guest_count) : 1,
+      category && category.trim() ? category.trim() : null,
+      notes && notes.trim() ? notes.trim() : null,
+      status,
+      req.user.id
+    );
+    const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(result.lastInsertRowid);
+    auditFromReq(req, { action: 'guest.create', entityType: 'guest', entityId: result.lastInsertRowid, eventId: Number(event_id), metadata: { name: name.trim() } });
+    res.status(201).json(guest);
+  } catch (err) {
+    console.error('Create guest error:', err);
+    res.status(400).json({ error: 'Failed to create guest: ' + err.message });
   }
-  const formattedPhone = phone ? formatUgandanPhoneNumber(phone) : null;
-  const status = req.body.status || 'approved';
-  const result = db.prepare(`
-    INSERT INTO guests (event_id, name, phone, email, table_number, guest_count, category, notes, status, submitted_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(event_id, name, formattedPhone, email || null, table_number || null, guest_count || 1, category || null, notes || null, status, req.user.id);
-  const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(guest);
 });
 
-router.put('/:id/approve', requireAdmin, (req, res) => {
+router.put('/:id/approve', requireAdmin, requireEntityEventAccess(guestEventId), (req, res) => {
   const existing = db.prepare('SELECT * FROM guests WHERE id = ? AND status = ?').get(req.params.id, 'pending');
   if (!existing) return res.status(404).json({ error: 'Pending guest not found' });
   db.prepare("UPDATE guests SET status = 'approved', updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  auditFromReq(req, { action: 'guest.approve', entityType: 'guest', entityId: req.params.id, eventId: req.eventId });
   const guest = db.prepare('SELECT * FROM guests WHERE id = ?').get(req.params.id);
   res.json(guest);
 });
 
-router.put('/:id/reject', requireAdmin, (req, res) => {
+router.put('/:id/reject', requireAdmin, requireEntityEventAccess(guestEventId), (req, res) => {
   const existing = db.prepare('SELECT * FROM guests WHERE id = ? AND status = ?').get(req.params.id, 'pending');
   if (!existing) return res.status(404).json({ error: 'Pending guest not found' });
   db.prepare("UPDATE guests SET status = 'rejected', updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  auditFromReq(req, { action: 'guest.reject', entityType: 'guest', entityId: req.params.id, eventId: req.eventId });
   res.json({ ok: true });
 });
 
-router.put('/:id', requireAdmin, (req, res) => {
+router.put('/:id', requireAdmin, requireEntityEventAccess(guestEventId), (req, res) => {
   const existing = db.prepare('SELECT * FROM guests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Guest not found' });
   const { name, phone, email, table_number, guest_count, category, notes } = req.body;
@@ -120,9 +142,10 @@ router.put('/:id', requireAdmin, (req, res) => {
   res.json(guest);
 });
 
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireAdmin, requireEntityEventAccess(guestEventId), (req, res) => {
   const result = db.prepare('DELETE FROM guests WHERE id = ?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Guest not found' });
+  auditFromReq(req, { action: 'guest.delete', entityType: 'guest', entityId: req.params.id, eventId: req.eventId });
   res.json({ ok: true });
 });
 

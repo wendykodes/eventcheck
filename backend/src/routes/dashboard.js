@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import db from '../database.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireEventAccess } from '../middleware/authorize.js';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/:event_id', (req, res) => {
+router.get('/:event_id', requireEventAccess(), (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.event_id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 

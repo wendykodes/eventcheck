@@ -1,12 +1,19 @@
 import { Router } from 'express';
 import db from '../database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireEventAccess, requireEntityEventAccess } from '../middleware/authorize.js';
+import { auditFromReq } from '../audit.js';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/', (req, res) => {
+function activityEventId(req) {
+  const row = db.prepare('SELECT event_id FROM activities WHERE id = ?').get(req.params.id);
+  return row ? row.event_id : null;
+}
+
+router.get('/', requireEventAccess(), (req, res) => {
   const { event_id } = req.query;
   if (!event_id) return res.status(400).json({ error: 'event_id is required' });
   let activities = db.prepare('SELECT * FROM activities WHERE event_id = ? ORDER BY sort_order ASC').all(event_id);
@@ -26,7 +33,7 @@ router.post('/', requireAdmin, (req, res) => {
   res.status(201).json(activity);
 });
 
-router.put('/:id', requireAdmin, (req, res) => {
+router.put('/:id', requireAdmin, requireEntityEventAccess(activityEventId), (req, res) => {
   const existing = db.prepare('SELECT * FROM activities WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Activity not found' });
   const { name, sort_order } = req.body;
@@ -39,7 +46,7 @@ router.put('/:id', requireAdmin, (req, res) => {
   res.json(activity);
 });
 
-router.put('/reorder/:event_id', requireAdmin, (req, res) => {
+router.put('/reorder/:event_id', requireAdmin, requireEventAccess(), (req, res) => {
   const { ordered_ids } = req.body;
   if (!Array.isArray(ordered_ids)) return res.status(400).json({ error: 'ordered_ids array required' });
   const tx = db.transaction(() => {
@@ -52,7 +59,7 @@ router.put('/reorder/:event_id', requireAdmin, (req, res) => {
   res.json(activities);
 });
 
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireAdmin, requireEntityEventAccess(activityEventId), (req, res) => {
   const result = db.prepare('DELETE FROM activities WHERE id = ?').run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Activity not found' });
   res.json({ ok: true });

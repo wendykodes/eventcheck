@@ -1,9 +1,13 @@
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { mkdirSync, accessSync, constants } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { formatUgandanPhoneNumber } from './phoneUtils.js';
+import { LIFECYCLE_STATES, legacyStatusToLifecycle } from './raas/lifecycle.js';
+import { DEFAULT_ROLE_PERMISSIONS } from './raas/permissions.js';
+import { EVENT_TEMPLATES } from './raas/templates.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -83,6 +87,33 @@ function migrate() {
   const guestCols = db.prepare("PRAGMA table_info('guests')").all().map(c => c.name);
   if (!guestCols.includes('status')) db.exec("ALTER TABLE guests ADD COLUMN status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('approved', 'pending', 'rejected'))");
   if (!guestCols.includes('submitted_by')) db.exec('ALTER TABLE guests ADD COLUMN submitted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  // --- RaaS Phase 0 foundation migrations ---
+  // Repair invitations table (v1 code expects columns that were never created).
+  const invCols = db.prepare("PRAGMA table_info('invitations')").all().map(c => c.name);
+  if (!invCols.includes('name')) db.exec('ALTER TABLE invitations ADD COLUMN name TEXT');
+  if (!invCols.includes('phone')) db.exec('ALTER TABLE invitations ADD COLUMN phone TEXT');
+  if (!invCols.includes('email')) db.exec('ALTER TABLE invitations ADD COLUMN email TEXT');
+  if (!invCols.includes('status')) db.exec("ALTER TABLE invitations ADD COLUMN status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'revoked'))");
+  if (!invCols.includes('activity_ids')) db.exec('ALTER TABLE invitations ADD COLUMN activity_ids TEXT');
+  if (!invCols.includes('created_by')) db.exec('ALTER TABLE invitations ADD COLUMN created_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  if (!invCols.includes('used_at')) db.exec('ALTER TABLE invitations ADD COLUMN used_at TEXT');
+  // Events: universal engine columns (org, lifecycle, template, capacity, config).
+  const evCols2 = db.prepare("PRAGMA table_info('events')").all().map(c => c.name);
+  if (!evCols2.includes('org_id')) db.exec('ALTER TABLE events ADD COLUMN org_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL');
+  if (!evCols2.includes('lifecycle_state')) db.exec("ALTER TABLE events ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'DRAFT'");
+  if (!evCols2.includes('template_key')) db.exec("ALTER TABLE events ADD COLUMN template_key TEXT NOT NULL DEFAULT 'private_celebration'");
+  if (!evCols2.includes('timezone')) db.exec("ALTER TABLE events ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Africa/Kampala'");
+  if (!evCols2.includes('start_time')) db.exec('ALTER TABLE events ADD COLUMN start_time TEXT');
+  if (!evCols2.includes('end_time')) db.exec('ALTER TABLE events ADD COLUMN end_time TEXT');
+  if (!evCols2.includes('expected_attendance')) db.exec('ALTER TABLE events ADD COLUMN expected_attendance INTEGER');
+  if (!evCols2.includes('max_capacity')) db.exec('ALTER TABLE events ADD COLUMN max_capacity INTEGER');
+  if (!evCols2.includes('config_json')) db.exec("ALTER TABLE events ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'");
+  // Backfill lifecycle_state from legacy status for pre-Phase-0 rows.
+  try {
+    const legacy = db.prepare("SELECT id, status FROM events WHERE lifecycle_state IS NULL OR lifecycle_state = '' OR lifecycle_state NOT IN ('DRAFT','CONFIGURING','READY','ACTIVE','CLOSING','CLOSED','ARCHIVED')").all();
+    const upd = db.prepare('UPDATE events SET lifecycle_state = ? WHERE id = ?');
+    for (const e of legacy) upd.run(legacyStatusToLifecycle(e.status), e.id);
+  } catch {}
 }
 
 export function initializeDatabase() {
@@ -180,10 +211,91 @@ export function initializeDatabase() {
       event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
       role TEXT NOT NULL CHECK(role IN ('admin', 'staff')),
       token TEXT NOT NULL UNIQUE,
+      name TEXT,
+      phone TEXT,
+      email TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'revoked')),
+      activity_ids TEXT,
       used_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      used_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       expires_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT,
+      contact_name TEXT,
+      contact_phone TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS organization_users (
+      org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      org_role TEXT NOT NULL DEFAULT 'member' CHECK(org_role IN ('owner', 'manager', 'member')),
+      PRIMARY KEY (org_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS event_templates (
+      key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      default_modules_json TEXT NOT NULL DEFAULT '[]',
+      default_roles_json TEXT NOT NULL DEFAULT '[]',
+      terminology_json TEXT NOT NULL DEFAULT '{}',
+      default_settings_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role_key TEXT NOT NULL,
+      permission TEXT NOT NULL,
+      PRIMARY KEY (role_key, permission)
+    );
+
+    CREATE TABLE IF NOT EXISTS event_user_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role_key TEXT NOT NULL,
+      zone TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE (event_id, user_id, role_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS access_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      subject_type TEXT NOT NULL CHECK(subject_type IN ('guest', 'staff')),
+      subject_id INTEGER,
+      token_hash TEXT NOT NULL UNIQUE,
+      scope_json TEXT NOT NULL DEFAULT '{}',
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      single_use INTEGER NOT NULL DEFAULT 1,
+      used_at TEXT,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      metadata_json TEXT,
+      ip TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_log(event_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_id);
+    CREATE INDEX IF NOT EXISTS idx_access_tokens_event ON access_tokens(event_id);
 
     CREATE TABLE IF NOT EXISTS import_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -217,26 +329,6 @@ export function initializeDatabase() {
     console.error('Phone migration notice:', e.message);
   }
 
-  // One-time clean-up of the mock "Smith-Johnson" event (from legacy seeding)
-  try {
-    const mockEvent = db.prepare("SELECT id FROM events WHERE name = 'Smith-Johnson Wedding Reception'").get();
-    if (mockEvent) {
-      console.log('Cleaning up mock event "Smith-Johnson Wedding Reception"...');
-      const eventId = mockEvent.id;
-      db.prepare('DELETE FROM checkins WHERE guest_id IN (SELECT id FROM guests WHERE event_id = ?)').run(eventId);
-      db.prepare('DELETE FROM guests WHERE event_id = ?').run(eventId);
-      db.prepare('DELETE FROM activities WHERE event_id = ?').run(eventId);
-      db.prepare('DELETE FROM user_events WHERE event_id = ?').run(eventId);
-      db.prepare('DELETE FROM registration_requests WHERE event_id = ?').run(eventId);
-      db.prepare('DELETE FROM invitations WHERE event_id = ?').run(eventId);
-      db.prepare('DELETE FROM import_history WHERE event_id = ?').run(eventId);
-      db.prepare('DELETE FROM events WHERE id = ?').run(eventId);
-      console.log('Mock event cleanup completed.');
-    }
-  } catch (err) {
-    console.warn('Mock data clean-up notice:', err.message);
-  }
-
   // 2. Ensure at least one Admin user exists
   const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
   if (adminCount === 0) {
@@ -246,6 +338,36 @@ export function initializeDatabase() {
       INSERT INTO users (name, pin_hash, role, status)
       VALUES ('Admin', ?, 'admin', 'active')
     `).run(adminPin);
+  }
+
+  // 3. Seed RaaS Phase 0 foundation: templates + role permissions (idempotent).
+  try {
+    const upsertTemplate = db.prepare(`
+      INSERT INTO event_templates (key, name, description, default_modules_json, default_roles_json, terminology_json, default_settings_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        name = excluded.name,
+        description = excluded.description,
+        default_modules_json = excluded.default_modules_json,
+        default_roles_json = excluded.default_roles_json,
+        terminology_json = excluded.terminology_json,
+        default_settings_json = excluded.default_settings_json
+    `);
+    for (const t of EVENT_TEMPLATES) {
+      upsertTemplate.run(
+        t.key, t.name, t.description || null,
+        JSON.stringify(t.default_modules || []),
+        JSON.stringify(t.default_roles || []),
+        JSON.stringify(t.terminology || {}),
+        JSON.stringify(t.default_settings || {}),
+      );
+    }
+    const upsertPerm = db.prepare('INSERT OR IGNORE INTO role_permissions (role_key, permission) VALUES (?, ?)');
+    for (const [roleKey, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+      for (const p of perms) upsertPerm.run(roleKey, p);
+    }
+  } catch (e) {
+    console.error('Phase 0 seed notice:', e.message);
   }
 }
 
