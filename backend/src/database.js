@@ -233,26 +233,6 @@ export function initializeDatabase() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- RSVP Ownership Rule: RSVP belongs to invitation (event_id = isolation).
-    CREATE TABLE IF NOT EXISTS rsvps (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-      invitation_id INTEGER NOT NULL REFERENCES invitations(id) ON DELETE CASCADE,
-      guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
-      status TEXT NOT NULL CHECK(status IN ('CONFIRMED', 'DECLINED')),
-      responded_at TEXT NOT NULL DEFAULT (datetime('now')),
-      responded_via TEXT NOT NULL DEFAULT 'GUEST_LINK' CHECK(responded_via IN ('GUEST_LINK', 'STAFF', 'ORGANIZER', 'RAAS_OPERATOR')),
-      attendee_count INTEGER,
-      guest_note TEXT,
-      response_version INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (invitation_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_rsvps_event ON rsvps(event_id);
-    CREATE INDEX IF NOT EXISTS idx_rsvps_guest ON rsvps(guest_id);
-    CREATE INDEX IF NOT EXISTS idx_rsvps_invitation ON rsvps(invitation_id);
-
     CREATE TABLE IF NOT EXISTS organization_users (
       org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -349,15 +329,36 @@ export function initializeDatabase() {
     console.error('Phone migration notice:', e.message);
   }
 
-  // 2. Ensure at least one Admin user exists
+  // 2. Ensure at least one Admin user exists.
+  // Production must NEVER silently create a default credential: bootstrapping
+  // requires an explicit INITIAL_ADMIN_PIN (consumed here, never logged).
+  // Local development keeps the convenient 1234 default.
   const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
   if (adminCount === 0) {
-    console.log('No Admin found! Creating default Admin user (PIN: 1234)...');
-    const adminPin = bcrypt.hashSync('1234', 10);
-    db.prepare(`
-      INSERT INTO users (name, pin_hash, role, status)
-      VALUES ('Admin', ?, 'admin', 'active')
-    `).run(adminPin);
+    if (process.env.NODE_ENV === 'production') {
+      const initialPin = (process.env.INITIAL_ADMIN_PIN || '').trim();
+      if (!initialPin) {
+        console.error('FATAL: No admin user exists and INITIAL_ADMIN_PIN is not set. Refusing to create a default credential in production.');
+        process.exit(1);
+      }
+      if (!/^\d{4,6}$/.test(initialPin)) {
+        console.error('FATAL: INITIAL_ADMIN_PIN must be 4-6 digits.');
+        process.exit(1);
+      }
+      const adminPin = bcrypt.hashSync(initialPin, 10);
+      db.prepare(`
+        INSERT INTO users (name, pin_hash, role, status)
+        VALUES ('Admin', ?, 'admin', 'active')
+      `).run(adminPin);
+      console.log('Admin user created from INITIAL_ADMIN_PIN.');
+    } else {
+      console.log('No Admin found! Creating default Admin user (PIN: 1234)...');
+      const adminPin = bcrypt.hashSync('1234', 10);
+      db.prepare(`
+        INSERT INTO users (name, pin_hash, role, status)
+        VALUES ('Admin', ?, 'admin', 'active')
+      `).run(adminPin);
+    }
   }
 
   // 3. Seed RaaS Phase 0 foundation: templates + role permissions (idempotent).
