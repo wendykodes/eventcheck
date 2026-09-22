@@ -1,9 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { api } from '../api/client';
 import { SkeletonCard } from '../components/Skeleton';
 import GuestBottomSheet from '../components/GuestBottomSheet';
+
+// Phase 2 PATH B scanner is lazy-loaded: camera + decode lib stay out of the
+// initial bundle and only load when staff opens scan mode.
+const StaffScanner = lazy(() => import('../components/StaffScanner'));
 
 function highlight(text, query) {
   if (!query || !text) return text;
@@ -12,6 +16,11 @@ function highlight(text, query) {
   return parts.map((p, i) =>
     re.test(p) ? <mark key={i} className="bg-primary-200 dark:bg-primary-800/40 rounded-sm text-inherit">{p}</mark> : p
   );
+}
+
+function isNetworkError(err) {
+  const m = String(err?.message || err || '');
+  return /failed to fetch|networkerror|network request failed|load failed|offline|ERR_INTERNET|ERR_NETWORK|TypeError/i.test(m);
 }
 
 export default function CheckInPage({ user }) {
@@ -32,6 +41,19 @@ export default function CheckInPage({ user }) {
   const [detailGuest, setDetailGuest] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [metrics, setMetrics] = useState({ total: 0, checked: 0, attendees_total: 0, attendees_checked: 0 });
+  const [outbox, setOutbox] = useState([]);
+  const [mode, setMode] = useState('search'); // search | scan (Phase 2 PATH B)
+
+  const outboxKey = selectedEvent ? `checkin_outbox_${selectedEvent}` : null;
+  const readOutbox = useCallback(() => {
+    if (!outboxKey) return [];
+    try { return JSON.parse(localStorage.getItem(outboxKey) || '[]'); } catch { return []; }
+  }, [outboxKey]);
+  const writeOutbox = useCallback((items) => {
+    if (!outboxKey) return;
+    try { localStorage.setItem(outboxKey, JSON.stringify(items)); } catch {}
+    setOutbox(items);
+  }, [outboxKey]);
 
   const eventParam = searchParams.get('event');
 
@@ -106,27 +128,84 @@ export default function CheckInPage({ user }) {
     if (!selectedActivity) return;
     if (checkedIn[guestId]?.find(c => c.activity_id === selectedActivity)) return;
     setCheckingIn(guestId);
+    // Stable idempotency key per guest+station: safe retries + offline flush dedupe.
+    const key = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${guestId}-${selectedActivity}`);
     try {
-      const ci = await api.checkIn(guestId, selectedActivity);
+      const ci = await api.checkIn(guestId, selectedActivity, key);
       setCheckedIn(prev => ({ ...prev, [guestId]: [...(prev[guestId] || []), ci] }));
       setRecentGuestIds(prev => [guestId, ...prev.filter(id => id !== guestId)].slice(0, 10));
       toast.success('Checked in!');
       if (selectedEvent) loadMetrics(selectedEvent);
       setTimeout(() => searchRef.current?.focus(), 100);
     } catch (err) {
-      toast.error(err.message);
-      throw err;
+      if (isNetworkError(err)) {
+        // Degraded connectivity: queue locally, flush when back online.
+        const guest = guests.find(g => g.id === guestId);
+        const items = [...readOutbox(), { guest_id: guestId, activity_id: selectedActivity, key, guestName: guest?.name || `#${guestId}`, ts: Date.now() }];
+        writeOutbox(items);
+        toast('No connection — check-in queued', { icon: '⏳' });
+      } else {
+        toast.error(err.message);
+        throw err;
+      }
     } finally { setCheckingIn(null); }
   };
 
+  const flushOutbox = useCallback(async () => {
+    const items = readOutbox();
+    if (items.length === 0 || !navigator.onLine) return;
+    let remaining = [...items];
+    for (const item of items) {
+      try {
+        const ci = await api.checkIn(item.guest_id, item.activity_id, item.key);
+        setCheckedIn(prev => ({ ...prev, [item.guest_id]: [...(prev[item.guest_id] || []), ci] }));
+        remaining = remaining.filter((r) => r.key !== item.key);
+        writeOutbox(remaining);
+      } catch (err) {
+        // Already checked in (flushed before interruption) → drop from queue.
+        if (/Already checked in/i.test(err.message || '')) {
+          remaining = remaining.filter((r) => r.key !== item.key);
+          writeOutbox(remaining);
+        } else if (isNetworkError(err)) {
+          break; // still offline — stop, keep the rest queued
+        } else {
+          // Real rejection (e.g. event closed): drop + surface.
+          remaining = remaining.filter((r) => r.key !== item.key);
+          writeOutbox(remaining);
+          toast.error(`${item.guestName}: ${err.message}`);
+        }
+      }
+    }
+    if (remaining.length < items.length && selectedEvent) loadMetrics(selectedEvent);
+    if (items.length !== remaining.length && remaining.length === 0) toast.success('Queued check-ins synced');
+  }, [readOutbox, writeOutbox, selectedEvent]);
+
+  useEffect(() => {
+    if (!outboxKey) return;
+    setOutbox(readOutbox());
+    flushOutbox();
+    const onOnline = () => flushOutbox();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [outboxKey, readOutbox, flushOutbox]);
+
   const handleUndoCheckIn = async (checkinId, guestId) => {
+    const reason = window.prompt('Reason for correcting this check-in? (required, recorded in audit)');
+    if (!reason || !reason.trim()) return;
     try {
-      await api.undoCheckIn(checkinId);
+      try {
+        await api.overrideCheckin(checkinId, reason.trim());
+      } catch (e) {
+        // Fallback for servers without the override endpoint.
+        if (/not found|404/i.test(e.message || '')) {
+          await api.undoCheckIn(checkinId);
+        } else throw e;
+      }
       setCheckedIn(prev => ({
         ...prev,
         [guestId]: (prev[guestId] || []).filter(c => c.id !== checkinId)
       }));
-      toast.success('Check-in undone');
+      toast.success('Check-in corrected');
       if (selectedEvent) loadMetrics(selectedEvent);
     } catch (err) {
       toast.error(err.message);
@@ -301,7 +380,33 @@ export default function CheckInPage({ user }) {
           <MetricBox label="People Left" value={remainingAttendees} color={remainingAttendees > 0 ? 'text-amber-500' : 'text-green-500'} />
         </div>
 
+        {outbox.length > 0 && (
+          <button onClick={flushOutbox}
+            className="w-full mb-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/30 text-left text-sm">
+            <span className="font-semibold">⏳ {outbox.length} check-in{outbox.length > 1 ? 's' : ''} waiting to sync</span>
+            <span className="text-[var(--color-text-secondary)]"> — tap to retry now</span>
+          </button>
+        )}
+
         <div className="relative">
+          <div className="grid grid-cols-2 gap-1.5 p-1 mb-2.5 rounded-xl bg-[var(--color-surface-hover)]" role="tablist" aria-label="Check-in method">
+            {['search', 'scan'].map((m) => (
+              <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+                className={`py-2 rounded-lg text-sm font-bold ${mode === m ? 'bg-[var(--color-surface)] shadow text-primary-500' : 'text-[var(--color-text-secondary)]'}`}>
+                {m === 'search' ? '🔍 Search' : '📷 Scan QR'}
+              </button>
+            ))}
+          </div>
+          {mode === 'scan' ? (
+            <Suspense fallback={<p className="text-sm text-center animate-pulse py-6">Loading scanner…</p>}>
+              <StaffScanner
+                activityId={selectedActivity}
+                onCheckedIn={() => { if (selectedEvent) loadMetrics(selectedEvent); }}
+                onFallback={() => setMode('search')}
+              />
+            </Suspense>
+          ) : (
+          <div className="relative">
           <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
@@ -315,29 +420,31 @@ export default function CheckInPage({ user }) {
               </svg>
             </button>
           )}
+          </div>
+          )}
         </div>
       </div>
 
-      {loading && (
+      {mode === 'search' && loading && (
         <div className="space-y-2.5 mt-3">
           {[1, 2, 3].map(i => <SkeletonCard key={i} lines={2} />)}
         </div>
       )}
 
-      {!loading && query.length > 0 && query.length < 2 && (
+      {mode === 'search' && !loading && query.length > 0 && query.length < 2 && (
         <div className="flex flex-col items-center py-16 text-center">
           <p className="text-sm text-[var(--color-text-secondary)]">Type at least 2 characters to search</p>
         </div>
       )}
 
-      {!loading && query.length >= 2 && guests.length === 0 && (
+      {mode === 'search' && !loading && query.length >= 2 && guests.length === 0 && (
         <div className="flex flex-col items-center py-16 text-center">
           <p className="font-semibold">No Guests Found</p>
           <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">Try a different name or phone number</p>
         </div>
       )}
 
-      {!loading && query.length === 0 && recentGuestIds.length > 0 && (
+      {mode === 'search' && !loading && query.length === 0 && recentGuestIds.length > 0 && (
         <div className="mt-3">
           <p className="text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-2 px-0.5">Recently Checked In</p>
           <div className="space-y-2">
@@ -346,9 +453,11 @@ export default function CheckInPage({ user }) {
         </div>
       )}
 
+      {mode === 'search' && (
       <div className={`space-y-2.5 pb-28 ${query.length >= 2 ? 'mt-3' : ''}`}>
         {guests.map(g => renderGuestCard(g))}
       </div>
+      )}
     </div>
   );
 

@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { SkeletonTable, SkeletonCard } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 import Modal from '../components/Modal';
+import GuestQrCard, { QrPrintStyle } from '../components/GuestQrCard';
 import { useAuth } from '../hooks/useAuth';
 
 export default function GuestListPage() {
@@ -28,12 +29,19 @@ export default function GuestListPage() {
   const [bulkValue, setBulkValue] = useState('');
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [selectAll, setSelectAll] = useState(false);
+  const [inviteLinks, setInviteLinks] = useState(null);
+  const [inviting, setInviting] = useState(false);
+  const [listTotal, setListTotal] = useState(null);
+  const [listTruncated, setListTruncated] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [g, a] = await Promise.all([api.getGuests(eventId), api.getActivities(eventId)]);
       setGuests(g);
       setActivities(a);
+      const h = api.lastHeaders || {};
+      setListTotal(h.total ? Number(h.total) : g.length);
+      setListTruncated(h.truncated === 'true');
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -158,14 +166,54 @@ export default function GuestListPage() {
     setShowBulkModal(true);
   };
 
+  const sendInvites = async () => {
+    if (selected.size === 0 || !isAdmin) return;
+    setInviting(true);
+    try {
+      const res = await api.createGuestInvites(Number(eventId), Array.from(selected));
+      setInviteLinks(res.invitations || []);
+      setSelected(new Set());
+      setSelectAll(false);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const copyLink = async (link) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success('Link copied — share via WhatsApp');
+    } catch {
+      toast.error('Could not copy link');
+    }
+  };
+
+  const guestName = (id) => guests.find((g) => g.id === id)?.name || `Guest #${id}`;
+
+  const copyAllLinks = async () => {
+    const links = (inviteLinks || []).filter((i) => i.link).map((i) => `${guestName(i.guest_id)}: ${i.link}`);
+    if (links.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(links.join('\n'));
+      toast.success(`${links.length} link(s) copied`);
+    } catch {
+      toast.error('Could not copy links');
+    }
+  };
+
   if (loading) return <div className="pt-4"><SkeletonTable rows={6} /></div>;
 
   return (
     <div className="pt-2 space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-2 px-1">
         <div>
-          <h1 className="text-[22px] font-bold tracking-tight">Guests</h1>
+          <h1 className="text-[22px] font-bold tracking-tight">Guests{listTotal !== null && ` (${guests.length}${listTruncated ? ` of ${listTotal}` : ''})`}</h1>
           <Link to={`/events/${eventId}`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-primary-500 transition-colors">← Dashboard</Link>
+          {listTruncated && (
+            <p className="text-[12px] text-amber-600 dark:text-amber-400 mt-0.5">Large list — refine search to see everyone.</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Link to={`/events/${eventId}/import`} className="btn btn-secondary btn-sm">
@@ -222,6 +270,11 @@ export default function GuestListPage() {
         <div className="flex items-center gap-2 px-1 py-2 bg-primary-500/10 rounded-xl animate-scale-in">
           <span className="text-sm font-medium text-primary-500">{selected.size} selected</span>
           <div className="flex-1" />
+          {isAdmin && (
+            <button onClick={sendInvites} disabled={inviting} className="btn btn-success btn-sm">
+              {inviting ? 'Sending…' : 'Send Invites'}
+            </button>
+          )}
           <select value={bulkAction} onChange={e => { setBulkAction(e.target.value); setBulkValue(''); if (e.target.value !== 'delete') setShowBulkModal(true); }}
             className="input input-sm text-xs max-w-[140px]">
             <option value="">Bulk action…</option>
@@ -415,6 +468,29 @@ export default function GuestListPage() {
 
       <Modal open={!!deleteTarget} title="Remove Guest?" message={`Delete "${deleteTarget?.name}" and all their check-in records?`}
         variant="danger" confirmLabel="Remove" onConfirm={deleteGuest} onCancel={() => setDeleteTarget(null)} />
+
+      <Modal open={!!inviteLinks} title="Invitations Ready"
+        message="Share each secure link with the guest (e.g. via WhatsApp), or print QR cards for the entrance table. Links expire automatically and can be revoked."
+        variant="success" confirmLabel="Done" onConfirm={() => setInviteLinks(null)} onCancel={() => setInviteLinks(null)}>
+        <QrPrintStyle />
+        <div id="qr-print-area" className="mt-3 grid grid-cols-2 gap-2 max-h-80 overflow-y-auto">
+          {(inviteLinks || []).map((inv) => (
+            inv.link ? (
+              <GuestQrCard key={inv.guest_id} guestName={guestName(inv.guest_id)} link={inv.link} size={120} />
+            ) : (
+              <div key={inv.guest_id} className="flex items-center gap-2 text-sm no-print">
+                <span className="flex-1 truncate text-[var(--color-text-secondary)]">
+                  Guest #{inv.guest_id}{inv.reused ? ' · existing link reused' : ''}{inv.error ? ` · ${inv.error}` : ''}
+                </span>
+              </div>
+            )
+          ))}
+        </div>
+        <div className="mt-3 flex gap-2 no-print">
+          <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print QR cards</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => copyAllLinks()}>Copy all links</button>
+        </div>
+      </Modal>
     </div>
   );
 }

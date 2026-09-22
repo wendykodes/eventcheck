@@ -6,9 +6,11 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import db from '../database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-import { requireEventAccess } from '../middleware/authorize.js';
+import { requireEventAccess, userHasEventAccess } from '../middleware/authorize.js';
 import { auditFromReq } from '../audit.js';
 import { LIFECYCLE_STATES, canTransition, lifecycleToLegacyStatus } from '../raas/lifecycle.js';
+import { getReadiness } from '../raas/readiness.js';
+import { checkFresh } from './opsCommon.js';
 import { EVENT_ROLES } from '../raas/permissions.js';
 
 const router = Router();
@@ -40,11 +42,9 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
-  // Event isolation: non-admins must be assigned to the event.
-  if (req.user.role !== 'admin') {
-    const link = db.prepare('SELECT 1 FROM user_events WHERE user_id = ? AND event_id = ?').get(req.user.id, req.params.id);
-    const role = db.prepare('SELECT 1 FROM event_user_roles WHERE user_id = ? AND event_id = ?').get(req.user.id, req.params.id);
-    if (!link && !role) return res.status(403).json({ error: 'No access to this event' });
+  // Event isolation via the central engine (membership, roles, break-glass).
+  if (req.user.role !== 'admin' && !userHasEventAccess(req.user.id, req.user.role, req.params.id)) {
+    return res.status(403).json({ error: 'No access to this event' });
   }
   res.json(shapeEvent(event));
 });
@@ -65,7 +65,7 @@ router.post('/', requireAdmin, (req, res) => {
     }
     const lifecycle = lifecycle_state && LIFECYCLE_STATES.includes(lifecycle_state) ? lifecycle_state : 'DRAFT';
     const result = db.prepare(
-      'INSERT INTO events (name, date, venue, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state, onboarding_method, config_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO events (name, date, venue, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state, onboarding_method, config_json, self_checkin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
       name.trim(),
       date && String(date).trim() ? String(date).trim() : '',
@@ -82,10 +82,16 @@ router.post('/', requireAdmin, (req, res) => {
       lifecycle,
       settings.onboarding_method || 'approval',
       JSON.stringify({ modules: settings.modules || undefined }),
+      crypto.randomBytes(16).toString('hex'), // Phase 2: opaque venue-QR identity
     );
     const eventId = result.lastInsertRowid;
     try {
       db.prepare('INSERT OR IGNORE INTO user_events (user_id, event_id) VALUES (?, ?)').run(req.user.id, eventId);
+    } catch {}
+    // Every event starts with a default check-in point so activation readiness
+    // never depends on the lazy side effect of a later activities read.
+    try {
+      db.prepare("INSERT INTO activities (event_id, name, sort_order) VALUES (?, 'General Check-In', 0)").run(eventId);
     } catch {}
     auditFromReq(req, { action: 'event.create', entityType: 'event', entityId: eventId, eventId, metadata: { template_key: tpl, lifecycle } });
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
@@ -100,6 +106,7 @@ router.put('/:id', requireAdmin, (req, res) => {
   const { name, date, venue, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, config_json } = req.body;
   const existing = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
+  if (!checkFresh(existing, req.body, res)) return;
   if (template_key) {
     const tplRow = db.prepare('SELECT key FROM event_templates WHERE key = ?').get(template_key);
     if (!tplRow) return res.status(400).json({ error: `Unknown template_key: ${template_key}` });
@@ -110,7 +117,7 @@ router.put('/:id', requireAdmin, (req, res) => {
   }
   // Lifecycle changes must go through the transition endpoint; reject direct edits.
   db.prepare(`
-    UPDATE events SET name=?, date=?, venue=?, description=?, status=?, template_key=?, org_id=?, timezone=?, start_time=?, end_time=?, expected_attendance=?, max_capacity=?, config_json=?, updated_at=datetime('now')
+    UPDATE events SET name=?, date=?, venue=?, description=?, status=?, template_key=?, org_id=?, timezone=?, start_time=?, end_time=?, expected_attendance=?, max_capacity=?, config_json=?, updated_at=strftime('%Y-%m-%d %H:%M:%f','now')
     WHERE id=?
   `).run(
     name ?? existing.name,
@@ -142,6 +149,13 @@ router.post('/:id/lifecycle', requireAdmin, (req, res) => {
   const from = existing.lifecycle_state || 'DRAFT';
   if (from === to) return res.json(shapeEvent(existing));
   if (!canTransition(from, to)) return res.status(409).json({ error: `Illegal transition ${from} → ${to}` });
+  // Phase 1 readiness gate: READY → ACTIVE requires minimum operational config.
+  if (to === 'ACTIVE') {
+    const readiness = getReadiness(Number(req.params.id));
+    if (!readiness.ready) {
+      return res.status(409).json({ error: 'Event is not ready for activation', blocking_failed: readiness.blocking_failed, checks: readiness.checks });
+    }
+  }
   db.prepare("UPDATE events SET lifecycle_state = ?, status = ?, updated_at = datetime('now') WHERE id = ?")
     .run(to, lifecycleToLegacyStatus(to), req.params.id);
   auditFromReq(req, { action: 'event.lifecycle', entityType: 'event', entityId: req.params.id, eventId: Number(req.params.id), metadata: { from, to } });

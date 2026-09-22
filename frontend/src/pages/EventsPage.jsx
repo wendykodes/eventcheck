@@ -27,6 +27,32 @@ export default function EventsPage() {
   const [onboardingMethod, setOnboardingMethod] = useState('approval');
   const [menuOpen, setMenuOpen] = useState(null);
   const menuRef = useRef(null);
+  const [intakes, setIntakes] = useState([]);
+  const [showIntakeForm, setShowIntakeForm] = useState(false);
+  const [intakeForm, setIntakeForm] = useState({ customer_name: '', event_type: 'Wedding', event_date: '', venue: '' });
+
+  const loadIntakes = async () => {
+    try {
+      const all = await api.getIntakes();
+      setIntakes(all.filter((i) => i.status === 'NEW' || i.status === 'REVIEWED'));
+    } catch {}
+  };
+
+  useEffect(() => { loadIntakes(); }, []);
+
+  const createIntake = async (e) => {
+    e.preventDefault();
+    if (!intakeForm.customer_name.trim()) return toast.error('Customer name is required');
+    try {
+      await api.createIntake(intakeForm);
+      toast.success('Handover recorded');
+      setIntakeForm({ customer_name: '', event_type: 'Wedding', event_date: '', venue: '' });
+      setShowIntakeForm(false);
+      loadIntakes();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   const load = async () => {
     try {
@@ -148,12 +174,16 @@ export default function EventsPage() {
     <div className="pt-2 space-y-4 animate-fade-in">
       <div className="flex items-center justify-between px-1">
         <h1 className="text-[26px] font-bold tracking-tight">Events</h1>
-        <button onClick={() => setShowForm(!showForm)} className="btn btn-primary btn-sm">
+        <div className="flex gap-2">
+          <Link to="/command" className="btn btn-secondary btn-sm">Command</Link>
+          <Link to="/operator" className="btn btn-secondary btn-sm">Operator</Link>
+          <button onClick={() => setShowForm(!showForm)} className="btn btn-primary btn-sm">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
           New Event
         </button>
+        </div>
       </div>
 
       {showForm && (
@@ -179,6 +209,37 @@ export default function EventsPage() {
         </form>
       )}
 
+      {intakes.length > 0 && (
+        <div className="card p-4 border-l-4 border-l-primary-500">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-[14px]">Customer handovers ({intakes.length})</p>
+            <button onClick={() => setShowIntakeForm(!showIntakeForm)} className="btn btn-ghost btn-sm">+ Intake</button>
+          </div>
+          <div className="space-y-1.5">
+            {intakes.map((i) => (
+              <div key={i.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="truncate">{i.customer_name} · {i.event_type || 'Event'}{i.event_date ? ` · ${i.event_date}` : ''}</span>
+                <button onClick={async () => { try { await api.convertIntake(i.id, 'wedding'); toast.success('Event created'); loadIntakes(); load(); } catch (err) { toast.error(err.message); } }}
+                  className="btn btn-primary btn-sm shrink-0">Convert</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {intakes.length === 0 && (
+        <button onClick={() => setShowIntakeForm(!showIntakeForm)} className="btn btn-ghost btn-sm self-start">+ Record customer handover</button>
+      )}
+      {showIntakeForm && (
+        <form onSubmit={createIntake} className="card p-4 space-y-2 animate-scale-in">
+          <input value={intakeForm.customer_name} onChange={(e) => setIntakeForm((f) => ({ ...f, customer_name: e.target.value }))} placeholder="Customer name *" className="input-field" />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={intakeForm.event_type} onChange={(e) => setIntakeForm((f) => ({ ...f, event_type: e.target.value }))} placeholder="Event type" className="input-field" />
+            <input type="date" value={intakeForm.event_date} onChange={(e) => setIntakeForm((f) => ({ ...f, event_date: e.target.value }))} className="input-field" />
+          </div>
+          <input value={intakeForm.venue} onChange={(e) => setIntakeForm((f) => ({ ...f, venue: e.target.value }))} placeholder="Venue" className="input-field" />
+          <button type="submit" className="btn btn-primary w-full">Save handover</button>
+        </form>
+      )}
       {events.length === 0 ? (
         <EmptyState
           title="No Events"
@@ -198,6 +259,9 @@ export default function EventsPage() {
                   <div className="flex items-center gap-2.5 mb-1">
                     <h3 className="font-bold text-[17px] tracking-tight">{event.name}</h3>
                     <span className={statusBadge[event.status] || statusBadge.upcoming}>{event.status}</span>
+                    {event.lifecycle_state && (
+                      <span className="badge badge-primary" title="Event lifecycle state">{event.lifecycle_state}</span>
+                    )}
                     <span className={methodBadge[event.onboarding_method] || methodBadge.approval}>{
                       ONBOARDING_LABELS[event.onboarding_method] || 'Approval'
                     }</span>

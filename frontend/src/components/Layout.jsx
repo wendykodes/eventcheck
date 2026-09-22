@@ -27,6 +27,9 @@ export default function Layout({ user, onLogout, theme }) {
   const checkinTabTo = activeEventId 
     ? `/checkin?event=${activeEventId}` 
     : (lastEvent ? `/checkin?event=${lastEvent}` : '/checkin?mode=checkin');
+  const opsTabTo = activeEventId
+    ? `/events/${activeEventId}/ops`
+    : (lastEvent ? `/events/${lastEvent}/ops` : '/');
   const eventsTabTo = isAdmin
     ? (path.startsWith('/events') && activeEventId ? `/events/${activeEventId}` : '/')
     : '/checkin';
@@ -34,6 +37,7 @@ export default function Layout({ user, onLogout, theme }) {
   const bottomTabs = isAdmin
     ? [
         { to: eventsTabTo, label: 'Events', icon: 'events' },
+        { to: opsTabTo, label: 'Ops', icon: 'ops' },
         { to: '/pending', label: 'Requests', icon: 'requests' },
         { to: '/users', label: 'Staff', icon: 'staff' },
         { to: '/leaderboard', label: 'Leaderboard', icon: 'leaderboard' },
@@ -89,6 +93,13 @@ export default function Layout({ user, onLogout, theme }) {
         </svg>
       );
     }
+    if (name === 'ops') {
+      return (
+        <svg className="w-5.5 h-5.5 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={strokeW}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 20.25l-2.25-2.25M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085" />
+        </svg>
+      );
+    }
     return null;
   }
 
@@ -139,8 +150,10 @@ export default function Layout({ user, onLogout, theme }) {
             let isActive = false;
             if (item.label === 'Events') {
               isActive = isAdmin 
-                ? (path === '/' || path.startsWith('/events'))
+                ? ((path === '/' || path.startsWith('/events')) && !path.includes('/ops'))
                 : (path === '/checkin' && !activeEventId && modeParam !== 'checkin');
+            } else if (item.label === 'Ops') {
+              isActive = path.includes('/ops');
             } else if (item.label === 'Check-In') {
               isActive = path === '/checkin' && (!!activeEventId || modeParam === 'checkin');
             } else {

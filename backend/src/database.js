@@ -43,6 +43,9 @@ try {
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// Phase 2 §29: entrances produce concurrent writes (rapid scans). Wait on
+// locks instead of failing fast; uniqueness constraints still decide winners.
+db.pragma('busy_timeout = 5000');
 
 function migrate() {
   const userCols = db.prepare("PRAGMA table_info('users')").all().map(c => c.name);
@@ -87,6 +90,15 @@ function migrate() {
   const guestCols = db.prepare("PRAGMA table_info('guests')").all().map(c => c.name);
   if (!guestCols.includes('status')) db.exec("ALTER TABLE guests ADD COLUMN status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('approved', 'pending', 'rejected'))");
   if (!guestCols.includes('submitted_by')) db.exec('ALTER TABLE guests ADD COLUMN submitted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  // --- RaaS Phase 1: RSVP fields on guests (DEPRECATED read-model cache).
+  // Source of truth is the dedicated `rsvps` table below (RSVP Ownership Rule:
+  // invitation owns RSVP; event_id mandatory isolation; guest_id = responder;
+  // absence of row = NO RESPONSE; check-in never overwrites RSVP).
+  // guests.rsvp_* columns are kept synced on write for backward compatibility
+  // with existing list/report queries and will be removed in a later phase.
+  if (!guestCols.includes('rsvp_status')) db.exec("ALTER TABLE guests ADD COLUMN rsvp_status TEXT NOT NULL DEFAULT 'no_response' CHECK(rsvp_status IN ('no_response', 'confirmed', 'declined'))");
+  if (!guestCols.includes('rsvp_updated_at')) db.exec('ALTER TABLE guests ADD COLUMN rsvp_updated_at TEXT');
+  if (!guestCols.includes('rsvp_note')) db.exec('ALTER TABLE guests ADD COLUMN rsvp_note TEXT');
   // --- RaaS Phase 0 foundation migrations ---
   // Repair invitations table (v1 code expects columns that were never created).
   const invCols = db.prepare("PRAGMA table_info('invitations')").all().map(c => c.name);
@@ -97,6 +109,9 @@ function migrate() {
   if (!invCols.includes('activity_ids')) db.exec('ALTER TABLE invitations ADD COLUMN activity_ids TEXT');
   if (!invCols.includes('created_by')) db.exec('ALTER TABLE invitations ADD COLUMN created_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
   if (!invCols.includes('used_at')) db.exec('ALTER TABLE invitations ADD COLUMN used_at TEXT');
+  // Phase 1: guest-scoped invitations (nullable for legacy staff invites).
+  if (!invCols.includes('guest_id')) db.exec('ALTER TABLE invitations ADD COLUMN guest_id INTEGER REFERENCES guests(id) ON DELETE CASCADE');
+  if (!invCols.includes('opened_at')) db.exec('ALTER TABLE invitations ADD COLUMN opened_at TEXT');
   // Events: universal engine columns (org, lifecycle, template, capacity, config).
   const evCols2 = db.prepare("PRAGMA table_info('events')").all().map(c => c.name);
   if (!evCols2.includes('org_id')) db.exec('ALTER TABLE events ADD COLUMN org_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL');
@@ -114,6 +129,404 @@ function migrate() {
     const upd = db.prepare('UPDATE events SET lifecycle_state = ? WHERE id = ?');
     for (const e of legacy) upd.run(legacyStatusToLifecycle(e.status), e.id);
   } catch {}
+
+  // --- RaaS Phase 2: operational modules. Every table is event-scoped with
+  // ON DELETE CASCADE so event deletion removes operational data. Status
+  // machines live in src/raas/ops.js; plan-vs-actual via planned_* vs actual_*.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schedule_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      location TEXT,
+      planned_start TEXT,
+      planned_end TEXT,
+      actual_start TEXT,
+      actual_end TEXT,
+      owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'PLANNED' CHECK(status IN ('PLANNED','READY','IN_PROGRESS','COMPLETED','CANCELLED','DELAYED')),
+      priority TEXT NOT NULL DEFAULT 'MEDIUM' CHECK(priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_schedule_event ON schedule_items(event_id);
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      role_scope TEXT,
+      zone TEXT,
+      priority TEXT NOT NULL DEFAULT 'MEDIUM' CHECK(priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+      due_at TEXT,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','ACCEPTED','IN_PROGRESS','COMPLETED','CANCELLED','BLOCKED')),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      completed_at TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_tasks_event ON tasks(event_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_user_id);
+
+    CREATE TABLE IF NOT EXISTS incidents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      category TEXT,
+      severity TEXT NOT NULL DEFAULT 'MEDIUM' CHECK(severity IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+      title TEXT NOT NULL,
+      description TEXT,
+      location TEXT,
+      reporter_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','ASSIGNED','IN_PROGRESS','RESOLVED','CLOSED')),
+      resolution TEXT,
+      resolved_at TEXT,
+      notes TEXT,
+      escalation_level INTEGER NOT NULL DEFAULT 0,
+      escalated_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_incidents_event ON incidents(event_id);
+
+    CREATE TABLE IF NOT EXISTS service_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      requester_name TEXT,
+      guest_id INTEGER REFERENCES guests(id) ON DELETE SET NULL,
+      category TEXT,
+      priority TEXT NOT NULL DEFAULT 'MEDIUM' CHECK(priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+      description TEXT,
+      location TEXT,
+      assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','ASSIGNED','IN_PROGRESS','FULFILLED','CLOSED','CANCELLED')),
+      resolution TEXT,
+      resolved_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_requests_event ON service_requests(event_id);
+
+    CREATE TABLE IF NOT EXISTS seating_zones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'TABLE' CHECK(kind IN ('TABLE','ZONE','VIP','STAFF','ACCESSIBLE')),
+      capacity INTEGER,
+      location TEXT,
+      notes TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_zones_event ON seating_zones(event_id);
+
+    CREATE TABLE IF NOT EXISTS seat_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      zone_id INTEGER NOT NULL REFERENCES seating_zones(id) ON DELETE CASCADE,
+      guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (event_id, guest_id),
+      UNIQUE (zone_id, guest_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_seats_zone ON seat_assignments(zone_id);
+
+    CREATE TABLE IF NOT EXISTS vendors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      service TEXT,
+      contact_name TEXT,
+      contact_phone TEXT,
+      arrival_time TEXT,
+      actual_arrival TEXT,
+      zone_id INTEGER REFERENCES seating_zones(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'EXPECTED' CHECK(status IN ('EXPECTED','ARRIVED','DEPARTED','CANCELLED','ISSUE')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_vendors_event ON vendors(event_id);
+
+    CREATE TABLE IF NOT EXISTS transport_routes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      pickup TEXT,
+      destination TEXT,
+      driver_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      vehicle TEXT,
+      pickup_time TEXT,
+      actual_pickup TEXT,
+      status TEXT NOT NULL DEFAULT 'PLANNED' CHECK(status IN ('PLANNED','EN_ROUTE','COMPLETED','CANCELLED','DELAYED')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_transport_event ON transport_routes(event_id);
+
+    CREATE TABLE IF NOT EXISTS transport_passengers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      route_id INTEGER NOT NULL REFERENCES transport_routes(id) ON DELETE CASCADE,
+      guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+      UNIQUE (route_id, guest_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS accommodations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      location TEXT,
+      room TEXT,
+      guest_id INTEGER REFERENCES guests(id) ON DELETE SET NULL,
+      check_in TEXT,
+      check_out TEXT,
+      notes TEXT,
+      transport_route_id INTEGER REFERENCES transport_routes(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_stays_event ON accommodations(event_id);
+
+    CREATE TABLE IF NOT EXISTS checkin_corrections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      checkin_id INTEGER,
+      guest_id INTEGER,
+      activity_id INTEGER,
+      staff_id INTEGER,
+      checked_in_at TEXT,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_corrections_event ON checkin_corrections(event_id);
+
+    CREATE TABLE IF NOT EXISTS idempotency_keys (
+      key TEXT PRIMARY KEY,
+      event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+      actor_id INTEGER,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      response_status INTEGER NOT NULL,
+      response_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_acks (
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (event_id, key)
+    );
+
+    -- RaaS Phase 4: managed-service delivery tables (all event-scoped CASCADE).
+    CREATE TABLE IF NOT EXISTS intakes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_name TEXT NOT NULL,
+      customer_phone TEXT,
+      event_type TEXT,
+      event_date TEXT,
+      venue TEXT,
+      expected_attendance INTEGER,
+      services_json TEXT NOT NULL DEFAULT '[]',
+      requirements TEXT,
+      status TEXT NOT NULL DEFAULT 'NEW' CHECK(status IN ('NEW','REVIEWED','CONVERTED','CANCELLED')),
+      converted_event_id INTEGER REFERENCES events(id) ON DELETE SET NULL,
+      assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS operator_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      body TEXT NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'INTERNAL' CHECK(visibility IN ('INTERNAL','CUSTOMER')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_notes_event ON operator_notes(event_id);
+
+    CREATE TABLE IF NOT EXISTS break_glass_grants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_bg_event_user ON break_glass_grants(event_id, user_id);
+
+    CREATE TABLE IF NOT EXISTS decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      reason TEXT,
+      options_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','DECIDED','CANCELLED')),
+      decision TEXT,
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TEXT,
+      requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_decisions_event ON decisions(event_id);
+
+    CREATE TABLE IF NOT EXISTS runbook_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      phase TEXT NOT NULL CHECK(phase IN ('BEFORE','DURING','AFTER')),
+      title TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      done_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      done_at TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_runbook_event ON runbook_items(event_id);
+
+    CREATE TABLE IF NOT EXISTS devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'PHONE' CHECK(kind IN ('PHONE','TABLET','OTHER')),
+      status TEXT NOT NULL DEFAULT 'READY' CHECK(status IN ('READY','DEPLOYED','ISSUE','RETURNED')),
+      assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      checklist_json TEXT NOT NULL DEFAULT '{}',
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_devices_event ON devices(event_id);
+
+    CREATE TABLE IF NOT EXISTS communications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      sender_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      recipients_text TEXT,
+      channel TEXT NOT NULL DEFAULT 'OPERATOR' CHECK(channel IN ('WHATSAPP','SMS','EMAIL','IN_APP','OPERATOR')),
+      message TEXT NOT NULL,
+      purpose TEXT,
+      status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN ('DRAFT','QUEUED','SENT','FAILED')),
+      sent_at TEXT,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_comms_event ON communications(event_id);
+  `);
+  // Column repair for DBs created before the notes field existed.
+  try {
+    const incCols = db.prepare("PRAGMA table_info('incidents')").all().map((c) => c.name);
+    if (incCols.length && !incCols.includes('notes')) db.exec('ALTER TABLE incidents ADD COLUMN notes TEXT');
+  } catch {}
+  // Phase 5 §49: seating zones need updated_at for optimistic concurrency.
+  try {
+    const zCols = db.prepare("PRAGMA table_info('seating_zones')").all().map((c) => c.name);
+    if (zCols.length && !zCols.includes('updated_at')) db.exec("ALTER TABLE seating_zones ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+  } catch {}
+  // --- RSVP Ownership Rule (locked Phase 1): dedicated rsvps table. ---
+  // invitation_id = primary business owner; event_id = isolation boundary;
+  // guest_id = responding person. No PENDING row: absence = NO RESPONSE.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rsvps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      invitation_id INTEGER NOT NULL REFERENCES invitations(id) ON DELETE CASCADE,
+      guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK(status IN ('CONFIRMED', 'DECLINED')),
+      responded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      responded_via TEXT NOT NULL DEFAULT 'GUEST_LINK' CHECK(responded_via IN ('GUEST_LINK', 'STAFF', 'ORGANIZER', 'RAAS_OPERATOR')),
+      attendee_count INTEGER,
+      guest_note TEXT,
+      response_version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (invitation_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rsvps_event ON rsvps(event_id);
+    CREATE INDEX IF NOT EXISTS idx_rsvps_guest ON rsvps(guest_id);
+    CREATE INDEX IF NOT EXISTS idx_rsvps_invitation ON rsvps(invitation_id);
+  `);
+  // Backfill: migrate legacy guests.rsvp_status into rsvps linked to the
+  // guest's latest invitation. Orphan legacy RSVPs (no invitation) get a
+  // system placeholder invitation so the ownership invariant holds.
+  try {
+    const orphans = db.prepare(`
+      SELECT id, event_id, name, rsvp_status, rsvp_note, rsvp_updated_at, guest_count
+      FROM guests WHERE rsvp_status IN ('confirmed', 'declined')
+    `).all();
+    const findInv = db.prepare(
+      "SELECT id FROM invitations WHERE guest_id = ? AND event_id = ? ORDER BY id DESC LIMIT 1"
+    );
+    const findRsvp = db.prepare('SELECT id FROM rsvps WHERE invitation_id = ? LIMIT 1');
+    const mkInv = db.prepare(
+      "INSERT INTO invitations (token, event_id, guest_id, role, status, expires_at) VALUES (?, ?, ?, 'staff', 'pending', datetime('now', '+30 days'))"
+    );
+    const mkRsvp = db.prepare(`
+      INSERT INTO rsvps (event_id, invitation_id, guest_id, status, responded_at, responded_via, attendee_count, guest_note, response_version, created_at, updated_at)
+      VALUES (?, ?, ?, ?, COALESCE(?, datetime('now')), 'STAFF', ?, ?, 1, datetime('now'), datetime('now'))
+    `);
+    const syncGuest = db.prepare("UPDATE guests SET rsvp_updated_at = COALESCE(rsvp_updated_at, datetime('now')) WHERE id = ?");
+    for (const g of orphans) {
+      let inv = findInv.get(g.id, g.event_id);
+      if (!inv) {
+        const raw = crypto.randomBytes(24).toString('hex');
+        const ins = mkInv.run(raw, g.event_id, g.id);
+        inv = { id: ins.lastInsertRowid };
+      }
+      if (findRsvp.get(inv.id)) continue;
+      mkRsvp.run(
+        g.event_id, inv.id, g.id,
+        String(g.rsvp_status).toUpperCase(),
+        g.rsvp_updated_at || null,
+        Number.isFinite(Number(g.guest_count)) ? Number(g.guest_count) : null,
+        g.rsvp_note || null,
+      );
+      syncGuest.run(g.id);
+    }
+  } catch (e) {
+    console.error('RSVP backfill notice:', e.message);
+  }
+
+  // --- Phase 2 QR Access & Dual Check-in: extend check-ins, venue QR code. ---
+  // checkins.method distinguishes SELF_SERVICE_QR / STAFF_QR / MANUAL.
+  // checkins.invitation_id links attendance to the invitation credential used
+  // (nullable: manual fallback may predate an invitation).
+  // events.self_checkin_code is the opaque public venue-QR identity: it only
+  // opens the self-check-in entry point, never grants access by itself.
+  try {
+    const ciCols = db.prepare("PRAGMA table_info('checkins')").all().map(c => c.name);
+    if (!ciCols.includes('method')) db.exec("ALTER TABLE checkins ADD COLUMN method TEXT NOT NULL DEFAULT 'MANUAL' CHECK(method IN ('SELF_SERVICE_QR', 'STAFF_QR', 'MANUAL'))");
+    if (!ciCols.includes('invitation_id')) db.exec('ALTER TABLE checkins ADD COLUMN invitation_id INTEGER REFERENCES invitations(id) ON DELETE SET NULL');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_checkins_method ON checkins(method)');
+  } catch (e) {
+    console.error('Phase 2 checkins migration notice:', e.message);
+  }
+  try {
+    const evCols = db.prepare("PRAGMA table_info('events')").all().map(c => c.name);
+    if (!evCols.includes('self_checkin_code')) db.exec('ALTER TABLE events ADD COLUMN self_checkin_code TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_events_checkin_code ON events(self_checkin_code)');
+    // Backfill: every existing event gets a venue QR identity.
+    const missing = db.prepare('SELECT id FROM events WHERE self_checkin_code IS NULL').all();
+    const setCode = db.prepare('UPDATE events SET self_checkin_code = ? WHERE id = ?');
+    for (const e of missing) setCode.run(crypto.randomBytes(16).toString('hex'), e.id);
+  } catch (e) {
+    console.error('Phase 2 venue-code migration notice:', e.message);
+  }
 }
 
 export function initializeDatabase() {
@@ -140,10 +553,13 @@ export function initializeDatabase() {
       description TEXT,
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'upcoming', 'completed')),
       staff_access_code TEXT,
+      self_checkin_code TEXT,
       onboarding_method TEXT NOT NULL DEFAULT 'approval',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
+    -- NOTE: idx_events_checkin_code is created in migrate(), after the
+    -- self_checkin_code column is added (init runs before migrate).
 
     CREATE TABLE IF NOT EXISTS user_events (
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -163,6 +579,9 @@ export function initializeDatabase() {
       notes TEXT,
       status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('approved', 'pending', 'rejected')),
       submitted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      rsvp_status TEXT NOT NULL DEFAULT 'no_response' CHECK(rsvp_status IN ('no_response', 'confirmed', 'declined')),
+      rsvp_updated_at TEXT,
+      rsvp_note TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -181,6 +600,8 @@ export function initializeDatabase() {
       guest_id INTEGER REFERENCES guests(id) ON DELETE CASCADE,
       activity_id INTEGER REFERENCES activities(id) ON DELETE CASCADE,
       staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      method TEXT NOT NULL DEFAULT 'MANUAL' CHECK(method IN ('SELF_SERVICE_QR', 'STAFF_QR', 'MANUAL')),
+      invitation_id INTEGER REFERENCES invitations(id) ON DELETE SET NULL,
       checked_in_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -193,6 +614,8 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_activities_event ON activities(event_id);
     CREATE INDEX IF NOT EXISTS idx_checkins_activity ON checkins(activity_id);
     CREATE INDEX IF NOT EXISTS idx_checkins_guest ON checkins(guest_id);
+    -- NOTE: idx_checkins_method is created in migrate(), after the method
+    -- column is added (init runs before migrate).
 
     CREATE TABLE IF NOT EXISTS registration_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,6 +642,8 @@ export function initializeDatabase() {
       used_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       used_at TEXT,
+      guest_id INTEGER REFERENCES guests(id) ON DELETE CASCADE,
+      opened_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       expires_at TEXT NOT NULL
     );
@@ -233,11 +658,71 @@ export function initializeDatabase() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- RSVP Ownership Rule: RSVP belongs to invitation (event_id = isolation).
+    CREATE TABLE IF NOT EXISTS rsvps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      invitation_id INTEGER NOT NULL REFERENCES invitations(id) ON DELETE CASCADE,
+      guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK(status IN ('CONFIRMED', 'DECLINED')),
+      responded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      responded_via TEXT NOT NULL DEFAULT 'GUEST_LINK' CHECK(responded_via IN ('GUEST_LINK', 'STAFF', 'ORGANIZER', 'RAAS_OPERATOR')),
+      attendee_count INTEGER,
+      guest_note TEXT,
+      response_version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (invitation_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rsvps_event ON rsvps(event_id);
+    CREATE INDEX IF NOT EXISTS idx_rsvps_guest ON rsvps(guest_id);
+    CREATE INDEX IF NOT EXISTS idx_rsvps_invitation ON rsvps(invitation_id);
+
     CREATE TABLE IF NOT EXISTS organization_users (
       org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       org_role TEXT NOT NULL DEFAULT 'member' CHECK(org_role IN ('owner', 'manager', 'member')),
       PRIMARY KEY (org_id, user_id)
+    );
+
+    -- Phase 6: venues (org-scoped, reusable across the org's events).
+    CREATE TABLE IF NOT EXISTS venues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      address TEXT,
+      capacity INTEGER,
+      contact_name TEXT,
+      contact_phone TEXT,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_venues_org ON venues(org_id);
+
+    -- Phase 6: contracts ledger (commercial relationship record; no payment
+    -- capture — invoicing/charging stays an explicit non-goal).
+    CREATE TABLE IF NOT EXISTS contracts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      customer_name TEXT,
+      package TEXT NOT NULL DEFAULT 'MANAGED' CHECK(package IN ('DIGITAL','MANAGED','FULL_RAAS','ENTERPRISE')),
+      status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN ('DRAFT','ACTIVE','COMPLETED','CANCELLED')),
+      value_cents INTEGER,
+      currency TEXT NOT NULL DEFAULT 'UGX',
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_contracts_org ON contracts(org_id);
+
+    CREATE TABLE IF NOT EXISTS contract_events (
+      contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      PRIMARY KEY (contract_id, event_id)
     );
 
     CREATE TABLE IF NOT EXISTS event_templates (

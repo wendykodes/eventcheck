@@ -203,6 +203,11 @@ router.post('/preview', (req, res) => {
 
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const invalidChars = /[<>{}|\\^~`]/;
+  // Within-file duplicate tracking (deterministic): same normalized phone/email/name
+  // appearing twice in one upload is flagged even when the DB is still empty.
+  const seenPhones = new Set();
+  const seenEmails = new Set();
+  const seenNames = new Set();
 
   for (let i = 0; i < allRows.length; i++) {
     const row = allRows[i];
@@ -301,6 +306,20 @@ router.post('/preview', (req, res) => {
       duplicateType = existingByPhone ? 'phone' : existingByEmail ? 'email' : 'name';
       existingGuest = existingByPhone || existingByEmail || existingByName;
     }
+    // Within-file fallback: flag repeats in this batch when the DB has no match.
+    if (!duplicateType) {
+      const keyHit =
+        (phoneFormatted && ['phone', 'phone_email', 'name_phone', 'all'].includes(duplicate_rule) && seenPhones.has(phoneFormatted)) ? 'phone' :
+        (emailRaw && ['email', 'phone_email', 'all'].includes(duplicate_rule) && seenEmails.has(emailRaw.toLowerCase())) ? 'email' :
+        (['name', 'name_phone', 'all'].includes(duplicate_rule) && seenNames.has(nameRaw.toLowerCase())) ? 'name' : null;
+      if (keyHit) {
+        duplicateType = `file:${keyHit}`;
+        existingGuest = { id: null, name: 'Same file (earlier row)' };
+      }
+    }
+    if (phoneFormatted) seenPhones.add(phoneFormatted);
+    if (emailRaw) seenEmails.add(emailRaw.toLowerCase());
+    seenNames.add(nameRaw.toLowerCase());
 
     parsed.push({
       name: nameRaw,
@@ -344,6 +363,14 @@ router.post('/confirm', (req, res) => {
 
   const { parsedRows, eventId } = session;
   const adminId = req.user.id;
+  // Closure policy: guest list frozen while CLOSING/CLOSED/ARCHIVED.
+  try {
+    const lcRow = db.prepare('SELECT lifecycle_state FROM events WHERE id = ?').get(eventId);
+    const lc = lcRow ? lcRow.lifecycle_state : 'DRAFT';
+    if (lc === 'CLOSED' || lc === 'ARCHIVED' || lc === 'CLOSING') {
+      return res.status(409).json({ error: `Event is ${lc}. Guest import is disabled.` });
+    }
+  } catch {}
 
   const insert = db.prepare(`
     INSERT INTO guests (event_id, name, phone, email, table_number, guest_count, category, notes)
@@ -360,6 +387,12 @@ router.post('/confirm', (req, res) => {
   const tx = db.transaction(() => {
     for (const row of parsedRows) {
       if (row.duplicate_type) {
+        // Within-file duplicates have no DB row to update: skip unless replacing
+        // (replace falls through to a fresh insert for file-dups).
+        if (String(row.duplicate_type).startsWith('file:') && duplicate_action !== 'replace') {
+          skipped++;
+          continue;
+        }
         if (duplicate_action === 'skip') {
           skipped++;
           continue;
@@ -390,6 +423,11 @@ router.post('/confirm', (req, res) => {
   `).run(eventId, adminId, file_name || 'unknown', total, imported, updated, skipped, failed.length, duplicateCount);
 
   importSessions.delete(session_id);
+
+  try {
+    db.prepare(`INSERT INTO audit_log (event_id, actor_id, action, entity_type, metadata_json, ip) VALUES (?, ?, 'guest.import', 'event', ?, ?)`)
+      .run(eventId, adminId, JSON.stringify({ total, imported, updated, skipped }), req.ip || null);
+  } catch {}
 
   res.json({
     total,

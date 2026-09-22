@@ -2,18 +2,22 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { api } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
 import { SkeletonCard } from '../components/Skeleton';
 import Modal from '../components/Modal';
+import GuestQrCard, { QrPrintStyle } from '../components/GuestQrCard';
 
 export default function GuestDetailPage() {
   const { eventId, guestId } = useParams();
-  const isAdmin = JSON.parse(localStorage.getItem('user') || '{}')?.role === 'admin';
+  const { isAdmin } = useAuth();
   const [guest, setGuest] = useState(null);
   const [checkins, setCheckins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [undoTarget, setUndoTarget] = useState(null);
   const [form, setForm] = useState({});
+  const [qrLink, setQrLink] = useState(null);
+  const [qrLoading, setQrLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -30,20 +34,76 @@ export default function GuestDetailPage() {
   const updateGuest = async (e) => {
     e.preventDefault();
     try {
-      const updated = await api.updateGuest(guestId, form);
+      // Send the freshness baseline: concurrent edits are rejected, never merged silently.
+      const updated = await api.updateGuest(guestId, { ...form, updated_at: guest?.updated_at });
       setGuest(updated);
+      setForm(updated);
       setEditing(false);
       toast.success('Guest updated');
     } catch (err) {
+      if (/changed since you loaded it|STALE/i.test(err.message || '')) {
+        toast.error('Someone else edited this guest. Reloading the latest version…', { duration: 4000 });
+        try {
+          const fresh = await api.getGuest(guestId);
+          setGuest(fresh);
+          setForm(fresh);
+          setEditing(false);
+        } catch {}
+      } else {
+        toast.error(err.message);
+      }
+    }
+  };
+
+  const generateQr = async () => {
+    setQrLoading(true);
+    try {
+      const res = await api.createGuestInvites(Number(eventId), [Number(guestId)]);
+      const inv = (res.invitations || [])[0];
+      if (inv?.link) {
+        setQrLink(inv.link);
+        toast.success(inv.reused ? 'Existing invitation QR loaded' : 'Invitation QR generated');
+      } else {
+        toast.error(inv?.error || 'Could not generate QR code');
+      }
+    } catch (err) {
       toast.error(err.message);
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  // Refresh re-resolves the live invitation link: after a revoke + reissue
+  // cycle it picks up the NEW link; otherwise the endpoint idempotently
+  // returns the existing one (no duplicate token is ever minted).
+  const refreshQr = async () => {
+    setQrLink(null);
+    await generateQr();
+  };
+
+  const copyQrLink = async () => {
+    if (!qrLink) return;
+    try {
+      await navigator.clipboard.writeText(qrLink);
+      toast.success('Link copied — share via WhatsApp');
+    } catch {
+      toast.error('Could not copy link');
     }
   };
 
   const undoCheckIn = async () => {
     if (!undoTarget) return;
+    const reason = window.prompt('Reason for correcting this check-in? (required, recorded in audit)');
+    if (!reason || !reason.trim()) return;
     try {
-      await api.undoCheckIn(undoTarget.id);
-      toast.success('Check-in undone');
+      try {
+        await api.overrideCheckin(undoTarget.id, reason.trim());
+      } catch (e) {
+        if (/not found|404/i.test(e.message || '')) {
+          await api.undoCheckIn(undoTarget.id);
+        } else throw e;
+      }
+      toast.success('Check-in corrected');
       setUndoTarget(null);
       setCheckins(prev => prev.filter(c => c.id !== undoTarget.id));
     } catch (err) {
@@ -56,6 +116,7 @@ export default function GuestDetailPage() {
 
   return (
     <div className="pt-2 space-y-5 animate-fade-in">
+      <QrPrintStyle />
       <Link to={`/events/${eventId}/guests`} className="text-[13px] text-[var(--color-text-secondary)] hover:text-primary-500 transition-colors inline-flex items-center gap-1">
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
         Back
@@ -106,6 +167,41 @@ export default function GuestDetailPage() {
           </div>
         </form>
       )}
+
+      <div>
+        <h2 className="section-title flex items-center gap-2">
+          <svg className="w-4 h-4 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zm9.75 0c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zm0 9.75c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
+          </svg>
+          Invitation QR
+        </h2>
+        {isAdmin ? (
+          qrLink ? (
+            <div className="space-y-3">
+              <div id="qr-print-area" className="max-w-[240px]">
+                <GuestQrCard guestName={guest.name} link={qrLink} size={200} />
+              </div>
+              <div className="flex gap-2 no-print">
+                <button onClick={copyQrLink} className="btn btn-secondary btn-sm">Copy link</button>
+                <button onClick={() => window.print()} className="btn btn-secondary btn-sm">Print card</button>
+                <button onClick={refreshQr} disabled={qrLoading} className="btn btn-ghost btn-sm" title="Re-check the live invitation link (e.g. after revoking and reissuing)">
+                  {qrLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+              <p className="text-xs text-[var(--color-text-secondary)] no-print">Same credential the guest sees. Revoking the invitation kills this QR.</p>
+            </div>
+          ) : (
+            <div className="card p-4">
+              <p className="text-sm text-[var(--color-text-secondary)] mb-3">Generate a scannable QR for this invitation — for printed cards or WhatsApp sharing.</p>
+              <button onClick={generateQr} disabled={qrLoading} className="btn btn-primary btn-sm no-print">
+                {qrLoading ? 'Generating…' : 'Generate QR code'}
+              </button>
+            </div>
+          )
+        ) : (
+          <p className="text-sm text-[var(--color-text-secondary)]">Only organizers can generate invitation QR codes.</p>
+        )}
+      </div>
 
       <div>
         <h2 className="section-title flex items-center gap-2">

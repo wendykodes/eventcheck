@@ -2,7 +2,9 @@ import { Router } from 'express';
 import db from '../database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { requireEventAccess, requireEntityEventAccess, guestEventId } from '../middleware/authorize.js';
+import { getLifecycle, writePolicy } from '../raas/readiness.js';
 import { auditFromReq } from '../audit.js';
+import { checkFresh } from './opsCommon.js';
 import { formatUgandanPhoneNumber } from '../phoneUtils.js';
 
 const router = Router();
@@ -12,6 +14,8 @@ router.use(requireAuth);
 router.get('/', requireEventAccess(), (req, res) => {
   const { event_id, q, status } = req.query;
   if (!event_id) return res.status(400).json({ error: 'event_id is required' });
+  // Phase 5 scale: bounded pages (default 200, max 1000) + total header.
+  const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
   let query = 'SELECT g.*, u.name AS submitted_by_name FROM guests g LEFT JOIN users u ON u.id = g.submitted_by WHERE g.event_id = ?';
   const params = [event_id];
   const s = status || 'approved';
@@ -21,30 +25,38 @@ router.get('/', requireEventAccess(), (req, res) => {
     query += ' AND (g.name LIKE ? OR g.phone LIKE ?)';
     params.push(`%${q}%`, `%${q}%`);
   }
-  query += ' ORDER BY g.name ASC';
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM guests g WHERE g.event_id = ? AND g.status = ?${q ? ' AND (g.name LIKE ? OR g.phone LIKE ?)' : ''}`)
+    .get(...(q ? [event_id, s, `%${q}%`, `%${q}%`] : [event_id, s])).c;
+  query += ' ORDER BY g.name ASC LIMIT ?';
+  params.push(limit);
   const guests = db.prepare(query).all(...params);
 
-  // Fetch checkins for this event and group them by guest_id to optimize frontend load
-  const checkins = db.prepare(`
-    SELECT c.id, c.guest_id, c.activity_id, c.checked_in_at, c.staff_id, u.name AS staff_name
-    FROM checkins c
-    JOIN activities a ON a.id = c.activity_id
-    LEFT JOIN users u ON u.id = c.staff_id
-    WHERE a.event_id = ?
-  `).all(event_id);
-
+  // Fetch checkins only for the returned page (bounded embed).
+  const ids = guests.map((g) => g.id);
   const checkinsByGuest = {};
-  for (const ci of checkins) {
-    if (!checkinsByGuest[ci.guest_id]) {
-      checkinsByGuest[ci.guest_id] = [];
+  if (ids.length > 0) {
+    const placeholders = ids.map(() => '?').join(',');
+    const checkins = db.prepare(`
+      SELECT c.id, c.guest_id, c.activity_id, c.checked_in_at, c.staff_id, u.name AS staff_name
+      FROM checkins c
+      JOIN activities a ON a.id = c.activity_id
+      LEFT JOIN users u ON u.id = c.staff_id
+      WHERE c.guest_id IN (${placeholders})
+    `).all(...ids);
+    for (const ci of checkins) {
+      if (!checkinsByGuest[ci.guest_id]) {
+        checkinsByGuest[ci.guest_id] = [];
+      }
+      checkinsByGuest[ci.guest_id].push(ci);
     }
-    checkinsByGuest[ci.guest_id].push(ci);
   }
 
   for (const g of guests) {
     g.checkins = checkinsByGuest[g.id] || [];
   }
 
+  res.set('X-Total-Count', String(total));
+  res.set('X-Truncated', guests.length < total ? 'true' : 'false');
   res.json(guests);
 });
 
@@ -74,6 +86,8 @@ router.post('/', requireEventAccess(), (req, res) => {
   try {
     const { event_id, name, phone, email, table_number, guest_count, category, notes } = req.body;
     if (Number(event_id) !== Number(req.eventId)) return res.status(400).json({ error: 'event_id mismatch' });
+    const policy = writePolicy(getLifecycle(Number(event_id)), 'guest.create');
+    if (!policy.ok) return res.status(409).json({ error: policy.error });
     if (!event_id || !name || !name.trim()) {
       return res.status(400).json({ error: 'event_id and name are required' });
     }
@@ -123,10 +137,11 @@ router.put('/:id/reject', requireAdmin, requireEntityEventAccess(guestEventId), 
 router.put('/:id', requireAdmin, requireEntityEventAccess(guestEventId), (req, res) => {
   const existing = db.prepare('SELECT * FROM guests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Guest not found' });
+  if (!checkFresh(existing, req.body, res)) return;
   const { name, phone, email, table_number, guest_count, category, notes } = req.body;
   const formattedPhone = phone !== undefined ? (phone ? formatUgandanPhoneNumber(phone) : null) : existing.phone;
   db.prepare(`
-    UPDATE guests SET name=?, phone=?, email=?, table_number=?, guest_count=?, category=?, notes=?, updated_at=datetime('now')
+    UPDATE guests SET name=?, phone=?, email=?, table_number=?, guest_count=?, category=?, notes=?, updated_at=strftime('%Y-%m-%d %H:%M:%f','now')
     WHERE id=?
   `).run(
     name ?? existing.name,

@@ -9,12 +9,20 @@ export default function StaffDashboardPage() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [myTasks, setMyTasks] = useState([]);
 
   useEffect(() => {
     const load = async () => {
       try {
         const d = await api.getStaffDashboard();
         setData(d);
+        // My Work: open tasks assigned to me across my events.
+        try {
+          const lists = await Promise.all(
+            (d.events || []).map((e) => api.getTasks(e.id, { assignee: 'me' }).catch(() => []))
+          );
+          setMyTasks(lists.flat().filter((t) => !['COMPLETED', 'CANCELLED'].includes(t.status)));
+        } catch {}
       } catch {} finally { setLoading(false); }
     };
     load();
@@ -86,6 +94,29 @@ export default function StaffDashboardPage() {
           <p className="text-sm text-[var(--color-text-secondary)]">
             {last_checkin.activity_name} · {new Date(last_checkin.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </p>
+        </div>
+      )}
+
+      {myTasks.length > 0 && (
+        <div className="space-y-2.5">
+          <h2 className="text-[13px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider px-1">My Work</h2>
+          {myTasks.map((t) => (
+            <div key={`${t.event_id}-${t.id}`} className="card p-4 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-[15px] leading-snug">{t.title}</p>
+                <p className="text-[12px] text-[var(--color-text-secondary)]">
+                  {t.status.replace(/_/g, ' ')}{t.due_at ? ` · Due ${t.due_at}` : ''}{t.priority ? ` · ${t.priority}` : ''}
+                </p>
+              </div>
+              {t.status === 'IN_PROGRESS' ? (
+                <button onClick={async () => { try { await api.completeTask(t.id); setMyTasks((m) => m.filter((x) => x.id !== t.id)); } catch (e) { /* toast handled by caller */ } }}
+                  className="btn btn-success btn-sm shrink-0">Done</button>
+              ) : (
+                <button onClick={async () => { try { const u = await api.setTaskStatus(t.id, 'IN_PROGRESS'); setMyTasks((m) => m.map((x) => (x.id === t.id ? u : x))); } catch {} }}
+                  className="btn btn-primary btn-sm shrink-0">Start</button>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

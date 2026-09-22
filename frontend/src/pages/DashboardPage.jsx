@@ -30,11 +30,27 @@ function AnimatedValue({ value, suffix = '' }) {
 export default function DashboardPage() {
   const { eventId } = useParams();
   const [data, setData] = useState(null);
+  const [rsvp, setRsvp] = useState(null);
+  const [readiness, setReadiness] = useState(null);
+  const [report, setReport] = useState(null);
+  const [decisions, setDecisions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      setData(await api.getDashboard(eventId));
+      const [dash, summary] = await Promise.all([
+        api.getDashboard(eventId),
+        api.getRsvpSummary(eventId).catch(() => null),
+      ]);
+      setData(dash);
+      if (summary) setRsvp(summary);
+      // Readiness + report refresh at most once per mount cycle (cheap enough to poll lightly).
+      api.getReadiness(eventId).then(setReadiness).catch(() => {});
+      api.getDecisions(eventId, 'OPEN').then(setDecisions).catch(() => {});
+      const lc = dash?.event?.lifecycle_state;
+      if (lc === 'CLOSING' || lc === 'CLOSED' || lc === 'ARCHIVED') {
+        api.getEventReport(eventId).then(setReport).catch(() => {});
+      }
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -67,7 +83,13 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link to={`/events/${eventId}/guests`} className="btn btn-secondary btn-sm">
+        <Link to={`/events/${eventId}/command`} className="btn btn-primary btn-sm">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+          </svg>
+          Command
+        </Link>
+        <Link to={`/events/${eventId}/guests`} className="btn btn-secondary btn-sm">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
             </svg>
@@ -79,6 +101,12 @@ export default function DashboardPage() {
             </svg>
             Check-In
           </Link>
+          <Link to={`/events/${eventId}/checkin-qr`} className="btn btn-secondary btn-sm">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zm9.75 0c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zm0 9.75c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
+            </svg>
+            Entrance QR
+          </Link>
         </div>
       </div>
 
@@ -88,6 +116,51 @@ export default function DashboardPage() {
         <StatCard label="People Left" value={remaining_attendees} sub={`${remaining_guests} invitations`} accent="#ff9f0a" />
         <StatCard label="Attendance Rate" chart={<DonutChart value={checked_in_attendees} max={total_attendees} size={60} strokeWidth={5} />} sub={`${attendance_pct}%`} />
       </div>
+
+      {decisions.length > 0 && (
+        <div className="card p-4 border-l-4 border-l-primary-500">
+          <p className="font-semibold text-[14px] mb-1.5">Decisions needed ({decisions.length})</p>
+          <div className="space-y-1.5">
+            {decisions.slice(0, 3).map((d) => (
+              <DecisionRow key={d.id} decision={d} onDecided={load} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {readiness && !readiness.ready && (
+        <div className="card p-4 border-l-4 border-l-amber-500">
+          <p className="font-semibold text-[14px]">Event not ready for activation ({event.lifecycle_state || 'DRAFT'})</p>
+          <ul className="text-[13px] text-[var(--color-text-secondary)] mt-1 space-y-0.5">
+            {readiness.checks.filter((c) => !c.pass).map((c) => (
+              <li key={c.key}>• {c.label}{c.blocking ? ' (required)' : ''}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {rsvp && (
+        <div>
+          <h2 className="section-title">RSVP</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard label="Confirmed" value={rsvp.confirmed} sub={`${rsvp.invited} invited`} accent="#30d158" />
+            <StatCard label="Declined" value={rsvp.declined} sub={`${rsvp.no_response} no response`} accent="#ff3b30" />
+            <StatCard label="Checked In" value={rsvp.checked_in} sub="distinct guests" />
+            <StatCard label="Opened" value={rsvp.opened} sub="invitations viewed" />
+          </div>
+        </div>
+      )}
+
+      {report && (
+        <div className="card p-4">
+          <h2 className="section-title">Final Report</h2>
+          <div className="text-[13px] space-y-1">
+            <p>Invited: <strong>{report.guests.invited}</strong> · Confirmed: <strong>{report.guests.confirmed}</strong> · Declined: <strong>{report.guests.declined}</strong> · No response: <strong>{report.guests.no_response}</strong></p>
+            <p>Checked in: <strong>{report.attendance.checked_in}</strong> · Not checked in: <strong>{report.attendance.not_checked_in}</strong> · Attendance: <strong>{report.attendance.attendance_pct}%</strong></p>
+            <p className="text-[var(--color-text-secondary)]">People expected: {report.attendance.people_expected} · People checked in: {report.attendance.people_checked_in}</p>
+          </div>
+        </div>
+      )}
 
       <div>
         <h2 className="section-title flex items-center gap-2">
@@ -211,8 +284,36 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value, sub, accent, chart }) {
+function DecisionRow({ decision, onDecided }) {
+  const [busy, setBusy] = useState(false);
+  const decide = async (choice) => {
+    setBusy(true);
+    try {
+      await api.decideDecision(decision.id, choice);
+      toast.success('Decision recorded');
+      onDecided();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  let options = [];
+  try { options = JSON.parse(decision.options_json || '[]'); } catch {}
   return (
+    <div className="text-sm space-y-1.5">
+      <p className="font-medium">{decision.title}</p>
+      {decision.reason && <p className="text-[12px] text-[var(--color-text-secondary)]">{decision.reason}</p>}
+      <div className="flex gap-1.5 flex-wrap">
+        {(options.length > 0 ? options : ['Approve', 'Decline']).map((o) => (
+          <button key={o} disabled={busy} onClick={() => decide(o)} className="btn btn-secondary btn-sm">{o}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, accent, chart }) {  return (
     <div className="card p-4 animate-slide-up">
       <div className="flex items-center gap-3">
         {chart ? (

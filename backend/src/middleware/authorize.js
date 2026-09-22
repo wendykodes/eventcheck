@@ -33,7 +33,24 @@ export function userHasEventAccess(userId, platformRole, eventId) {
   const link = db.prepare('SELECT 1 FROM user_events WHERE user_id = ? AND event_id = ?').get(userId, eventId);
   if (link) return true;
   const role = db.prepare('SELECT 1 FROM event_user_roles WHERE user_id = ? AND event_id = ?').get(userId, eventId);
-  return !!role;
+  if (role) return true;
+  // Break-glass (§51/4.5): explicit, reason-required, time-limited emergency
+  // access. Checked at the single membership choke point so it scopes exactly
+  // one event and expires automatically. Grant/revoke are audited.
+  try {
+    const bg = db.prepare(`SELECT 1 FROM break_glass_grants WHERE user_id = ? AND event_id = ?
+      AND revoked_at IS NULL AND expires_at > datetime('now')`).get(userId, eventId);
+    if (bg) return true;
+  } catch {}
+  return false;
+}
+
+export function viaBreakGlass(userId, eventId) {
+  try {
+    const bg = db.prepare(`SELECT id FROM break_glass_grants WHERE user_id = ? AND event_id = ?
+      AND revoked_at IS NULL AND expires_at > datetime('now')`).get(userId, eventId);
+    return bg ? bg.id : null;
+  } catch { return null; }
 }
 
 // Resolve effective permissions for a user within an event:
