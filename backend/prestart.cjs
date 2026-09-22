@@ -6,6 +6,9 @@
 // itself fails, so the platform reports a build/startup failure instead of a
 // cryptic native crash loop.
 const { execSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 function loads() {
   // NB: require() alone is not enough — better-sqlite3 resolves its native
@@ -26,6 +29,22 @@ function loads() {
 if (loads()) {
   console.log('prestart: better-sqlite3 loads OK');
 } else {
+  // Purge every layer that could serve the same broken binary again:
+  // prebuild-install download cache, node-gyp header cache, and the
+  // module's own build output. Without this, `npm rebuild` can "succeed"
+  // in seconds by reinstalling a corrupt cached artifact.
+  for (const dir of [
+    path.join(os.homedir(), '.npm', '_prebuilds'),
+    path.join(os.homedir(), '.cache', 'node-gyp'),
+    path.join(os.homedir(), '.node-gyp'),
+    path.join(__dirname, 'node_modules', 'better-sqlite3', 'build'),
+    path.join(__dirname, '..', 'node_modules', 'better-sqlite3', 'build'),
+  ]) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      console.log(`prestart: purged ${dir}`);
+    } catch {}
+  }
   console.log('prestart: rebuilding better-sqlite3 from source against runtime Node...');
   try {
     execSync('npm rebuild better-sqlite3', { stdio: 'inherit', cwd: __dirname });
