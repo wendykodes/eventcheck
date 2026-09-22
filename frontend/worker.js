@@ -5,7 +5,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
-      const backend = (env.BACKEND_URL || 'https://natural-beauty-production-5cb5.up.railway.app').replace(/\/$/, '');
+      const backend = (env.BACKEND_URL || 'https://eventcheck-89g7.onrender.com').replace(/\/$/, '');
       const target = new URL(url.pathname + url.search, backend + '/');
       const headers = new Headers(request.headers);
       headers.set('host', new URL(backend).host);

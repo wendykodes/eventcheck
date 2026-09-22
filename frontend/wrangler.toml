@@ -8,4 +8,4 @@ directory = "./dist"
 not_found_handling = "single-page-application"
 
 [vars]
-BACKEND_URL = "https://natural-beauty-production-5cb5.up.railway.app"
+BACKEND_URL = "https://eventcheck-89g7.onrender.com"
