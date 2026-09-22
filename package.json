@@ -14,6 +14,6 @@
     "dev:frontend": "cd frontend && npm run dev",
     "seed": "cd backend && npm run seed",
     "build": "cd frontend && npm run build",
-    "start": "cd backend && node src/index.js"
+    "start": "cd backend && npm start --silent"
   }
 }

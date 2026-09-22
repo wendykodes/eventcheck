@@ -1,1 +1,1 @@
-web: cd backend && node src/index.js
+web: cd backend && npm start --silent
