@@ -18,7 +18,7 @@ function loads() {
     db.close();
     return true;
   } catch (e) {
-    console.log(`prestart: better-sqlite3 failed to load (${e.code || e.message})`);
+    console.log(`prestart: Node ${process.version}, better-sqlite3 failed to load (${e.code || 'no-code'}): ${(e.message || String(e)).split('\n')[0]}`);
     return false;
   }
 }
