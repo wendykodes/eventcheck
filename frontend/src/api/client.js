@@ -12,8 +12,11 @@ async function request(path, options = {}) {
   if (res.status === 401) {
     // A 401 means the credential itself was rejected, so retrying with the
     // same token is futile (polling pages would spam 401s forever). Drop the
-    // dead token and return to login, unless already on a public route.
-    if (token) localStorage.removeItem('token');
+    // dead session entirely — BOTH token and cached user, otherwise the stale
+    // user object keeps passing ProtectedRoute and the login redirect loops
+    // forever — then return to login, unless already on a public route.
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     const here = window.location.pathname || '';
     const isPublic =
       here === '/login' ||
@@ -125,6 +128,7 @@ export const api = {
   journeyContext: (token) => request(`/journey/${encodeURIComponent(token)}`),
   journeyCheckin: (token) => request(`/guest-invite/${encodeURIComponent(token)}/checkin`, { method: 'POST' }),
   journeySeatConfirm: (token) => request(`/journey/${encodeURIComponent(token)}/seat-confirm`, { method: 'POST' }),
+  journeyDepart: (token) => request(`/journey/${encodeURIComponent(token)}/depart`, { method: 'POST' }),
   journeyMenu: (token) => request(`/journey/${encodeURIComponent(token)}/menu`),
   journeyRequests: (token) => request(`/journey/${encodeURIComponent(token)}/requests`),
   journeyCreateRequest: (token, data) => request(`/journey/${encodeURIComponent(token)}/requests`, { method: 'POST', body: JSON.stringify(data) }),
@@ -156,6 +160,7 @@ export const api = {
   setRequestStatus: (id, to, resolution) => request(`/requests/${id}/status`, { method: 'POST', body: JSON.stringify({ to, resolution }) }),
   getZones: (eventId) => request(`/seating/zones?event_id=${eventId}`),
   createZone: (data, key) => request('/seating/zones', { method: 'POST', headers: key ? { 'Idempotency-Key': key } : {}, body: JSON.stringify(data) }),
+  updateZone: (id, data) => request(`/seating/zones/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteZone: (id) => request(`/seating/zones/${id}`, { method: 'DELETE' }),
   getSeatAssignments: (eventId) => request(`/seating/assignments?event_id=${eventId}`),
   assignSeat: (data, move, key) => request('/seating/assign', { method: 'POST', headers: key ? { 'Idempotency-Key': key } : {}, body: JSON.stringify({ ...data, move }) }),
