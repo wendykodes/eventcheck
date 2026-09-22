@@ -10,10 +10,17 @@ async function request(path, options = {}) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
-    // Only hard-redirect if there's genuinely no stored token (never logged in).
-    // If the token simply expired or was invalidated, let the caller handle the error
-    // instead of silently logging the user out mid-workflow.
-    if (!token) {
+    // A 401 means the credential itself was rejected, so retrying with the
+    // same token is futile (polling pages would spam 401s forever). Drop the
+    // dead token and return to login, unless already on a public route.
+    if (token) localStorage.removeItem('token');
+    const here = window.location.pathname || '';
+    const isPublic =
+      here === '/login' ||
+      here === '/register' ||
+      here.startsWith('/invitation/') ||
+      here.startsWith('/pending-approval/');
+    if (!isPublic) {
       window.location.href = '/login';
     }
     const errData = await res.json().catch(() => ({ error: 'Unauthorized' }));
@@ -218,4 +225,9 @@ export const api = {
   createTemplate: (data) => request('/templates', { method: 'POST', body: JSON.stringify(data) }),
   templateFromEvent: (eventId, data) => request(`/templates/from-event/${eventId}`, { method: 'POST', body: JSON.stringify(data) }),
   cloneEvent: (eventId, data) => request(`/events/${eventId}/clone`, { method: 'POST', body: JSON.stringify(data) }),
+  // Phase 7 — intelligence (deterministic, explainable)
+  getIntelligence: (eventId) => request(`/intelligence/${eventId}`),
+  getBaselines: (orgId, templateKey) => request(`/learning/baselines${orgId !== undefined ? `?org_id=${orgId}` : ''}${templateKey ? `${orgId !== undefined ? '&' : '?'}template_key=${templateKey}` : ''}`),
+  rebuildLearning: () => request('/learning/rebuild', { method: 'POST' }),
+  queueRsvpNudges: (eventId, key) => request('/followups/rsvp-nudges', { method: 'POST', headers: key ? { 'Idempotency-Key': key } : {}, body: JSON.stringify({ event_id: eventId }) }),
 };
