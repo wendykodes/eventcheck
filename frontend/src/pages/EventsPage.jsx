@@ -19,8 +19,9 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [form, setForm] = useState({ name: '', date: '', venue: '', description: '', status: 'upcoming' });
+  const [form, setForm] = useState({ name: '', date: '', venue: '', description: '', status: 'upcoming', org_id: '' });
   const [errors, setErrors] = useState({});
+  const [orgOptions, setOrgOptions] = useState([]);
   const [codeModal, setCodeModal] = useState(null);
   const [newCode, setNewCode] = useState('');
   const [onboardingModal, setOnboardingModal] = useState(null);
@@ -106,6 +107,8 @@ export default function EventsPage() {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => { api.getOrgs().then(setOrgOptions).catch(() => {}); }, []);
+
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e) => {
@@ -131,11 +134,12 @@ export default function EventsPage() {
         date: form.date ? form.date.trim() : '',
         venue: form.venue ? form.venue.trim() : '',
         description: form.description ? form.description.trim() : '',
-        status: form.status || 'upcoming'
+        status: form.status || 'upcoming',
+        ...(form.org_id ? { org_id: Number(form.org_id) } : {}),
       });
       toast.success('Event created');
       setShowForm(false);
-      setForm({ name: '', date: '', venue: '', description: '', status: 'upcoming' });
+      setForm({ name: '', date: '', venue: '', description: '', status: 'upcoming', org_id: '' });
       setErrors({});
       load();
     } catch (err) {
@@ -177,6 +181,7 @@ export default function EventsPage() {
         <div className="flex gap-2">
           <Link to="/command" className="btn btn-secondary btn-sm">Command</Link>
           <Link to="/operator" className="btn btn-secondary btn-sm">Operator</Link>
+          <Link to="/organizations" className="btn btn-secondary btn-sm">Orgs</Link>
           <button onClick={() => setShowForm(!showForm)} className="btn btn-primary btn-sm">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -198,6 +203,12 @@ export default function EventsPage() {
             <input value={form.venue} onChange={e => setForm(f => ({...f, venue: e.target.value}))} placeholder="Venue" className="input-field" />
           </div>
           <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Description" rows={2} className="input-field resize-none" />
+          {orgOptions.length > 0 && (
+            <select value={form.org_id} onChange={e => setForm(f => ({ ...f, org_id: e.target.value }))} className="input-field">
+              <option value="">No organization</option>
+              {orgOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          )}
           <div className="flex gap-2">
             <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value}))} className="input-field w-auto">
               <option value="upcoming">Upcoming</option>
@@ -355,6 +366,13 @@ export default function EventsPage() {
                         Import History
                       </button>
                       <div className="h-px bg-[var(--color-border)] mx-3 my-1" />
+                      <button onClick={async () => { const name = window.prompt('Name for the cloned event (structure only — no guests or data)?', `${event.name} (copy)`); if (!name || !name.trim()) { setMenuOpen(null); return; } try { await api.cloneEvent(event.id, { name: name.trim() }); toast.success('Event cloned'); load(); } catch (err) { toast.error(err.message); } setMenuOpen(null); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors">
+                        <svg className="w-4 h-4 text-[var(--color-text-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6a2.25 2.25 0 00-2.25-2.25H6A2.25 2.25 0 003.75 6v8.25A2.25 2.25 0 006 16.5h2.25m8.25-8.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-7.5A2.25 2.25 0 018.25 18v-7.5a2.25 2.25 0 012.25-2.25h6z" />
+                        </svg>
+                        Clone Event
+                      </button>
                       <button onClick={() => { setDeleteTarget(event); setMenuOpen(null); }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-500/5 transition-colors">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

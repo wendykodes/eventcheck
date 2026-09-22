@@ -1,5 +1,5 @@
-// Phase 4 native-module smoke test (migration recovery plan).
-// Run during the Render build AFTER the better-sqlite3 rebuild so a broken
+// Native-module smoke test (kept as a standalone diagnostic; not wired into
+// any build). Run manually if a deploy shows native crashes: a broken
 // native binary fails the build instead of crashing the server at runtime.
 // Distinguishes dependency/build failure from application/database failure:
 // this file touches no application code and no production database.

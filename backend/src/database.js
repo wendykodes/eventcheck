@@ -123,6 +123,7 @@ function migrate() {
   if (!evCols2.includes('expected_attendance')) db.exec('ALTER TABLE events ADD COLUMN expected_attendance INTEGER');
   if (!evCols2.includes('max_capacity')) db.exec('ALTER TABLE events ADD COLUMN max_capacity INTEGER');
   if (!evCols2.includes('config_json')) db.exec("ALTER TABLE events ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'");
+  if (!evCols2.includes('venue_id')) db.exec('ALTER TABLE events ADD COLUMN venue_id INTEGER REFERENCES venues(id) ON DELETE SET NULL');
   // Backfill lifecycle_state from legacy status for pre-Phase-0 rows.
   try {
     const legacy = db.prepare("SELECT id, status FROM events WHERE lifecycle_state IS NULL OR lifecycle_state = '' OR lifecycle_state NOT IN ('DRAFT','CONFIGURING','READY','ACTIVE','CLOSING','CLOSED','ARCHIVED')").all();
@@ -209,6 +210,8 @@ function migrate() {
       status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','ASSIGNED','IN_PROGRESS','FULFILLED','CLOSED','CANCELLED')),
       resolution TEXT,
       resolved_at TEXT,
+      checkin_id INTEGER REFERENCES checkins(id) ON DELETE SET NULL,
+      seat_label TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -232,11 +235,26 @@ function migrate() {
       event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
       zone_id INTEGER NOT NULL REFERENCES seating_zones(id) ON DELETE CASCADE,
       guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+      seated_at TEXT,
+      seated_via TEXT CHECK(seated_via IN ('GUEST', 'STAFF')),
+      seated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (event_id, guest_id),
       UNIQUE (zone_id, guest_id)
     );
     CREATE INDEX IF NOT EXISTS idx_seats_zone ON seat_assignments(zone_id);
+
+    CREATE TABLE IF NOT EXISTS guest_service_menu (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'OTHER' CHECK(kind IN ('DRINK', 'BITE', 'ASSISTANCE', 'OTHER')),
+      available INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_menu_event ON guest_service_menu(event_id);
 
     CREATE TABLE IF NOT EXISTS vendors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -526,6 +544,36 @@ function migrate() {
     for (const e of missing) setCode.run(crypto.randomBytes(16).toString('hex'), e.id);
   } catch (e) {
     console.error('Phase 2 venue-code migration notice:', e.message);
+  }
+
+  // --- Guest Journey: seated state, request context, event service menu. ---
+  // seat_assignments.seated_*: ASSIGNED (row exists) vs SEATED (seated_at set)
+  // are different concepts (§10). service_requests.checkin_id/seat_label give
+  // staff the guest's context without trusting client values. guest_service_menu
+  // is the per-event configurable service catalogue (no hard-coded items).
+  try {
+    const saCols = db.prepare("PRAGMA table_info('seat_assignments')").all().map(c => c.name);
+    if (!saCols.includes('seated_at')) db.exec('ALTER TABLE seat_assignments ADD COLUMN seated_at TEXT');
+    if (!saCols.includes('seated_via')) db.exec("ALTER TABLE seat_assignments ADD COLUMN seated_via TEXT CHECK(seated_via IN ('GUEST', 'STAFF'))");
+    if (!saCols.includes('seated_by')) db.exec('ALTER TABLE seat_assignments ADD COLUMN seated_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+    const srCols = db.prepare("PRAGMA table_info('service_requests')").all().map(c => c.name);
+    if (!srCols.includes('checkin_id')) db.exec('ALTER TABLE service_requests ADD COLUMN checkin_id INTEGER REFERENCES checkins(id) ON DELETE SET NULL');
+    if (!srCols.includes('seat_label')) db.exec('ALTER TABLE service_requests ADD COLUMN seat_label TEXT');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS guest_service_menu (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'OTHER' CHECK(kind IN ('DRINK', 'BITE', 'ASSISTANCE', 'OTHER')),
+        available INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_service_menu_event ON guest_service_menu(event_id);
+    `);
+  } catch (e) {
+    console.error('Guest Journey migration notice:', e.message);
   }
 }
 

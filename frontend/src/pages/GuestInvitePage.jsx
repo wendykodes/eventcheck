@@ -2,7 +2,7 @@
 // Public, mobile-first, low-data, no account. One job: show event, take response.
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
 import QrImage from '../components/QrImage';
 
@@ -107,6 +107,9 @@ export default function GuestInvitePage() {
                 <QrImage value={window.location.href} size={200} />
                 <p className="text-sm font-semibold">Show this QR code at the entrance</p>
                 <p className="text-xs text-[var(--color-text-secondary)]">Staff will scan it to check you in. You can also scan the event QR at the entrance to check yourself in.</p>
+                <Link to={`/journey/${token}`} className="btn btn-success w-full">
+                  At the venue? Check in now
+                </Link>
               </div>
             )}
             <button className="btn btn-secondary btn-sm mx-auto" onClick={() => setStatus('ready')}>

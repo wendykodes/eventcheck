@@ -113,60 +113,84 @@ router.get('/self-checkin/:code', (req, res) => {
   res.json({ event, checkin_open: checkinOpen(event.id) });
 });
 
+// Shared invitation→check-in core (exported for journey.js). Identical
+// validation everywhere: resolve → event match → lifecycle → approval →
+// default activity → duplicate-safe insert. Returns {status, body} so both
+// the venue-code flow and the invite-link flow behave exactly alike.
+export function performInvitationCheckin({ eventId, tokenPayload, method = 'SELF_SERVICE_QR', staffId = null, actorId = null, ip = null }) {
+  const raw = extractInviteToken(tokenPayload);
+  if (!raw) {
+    rejected({ eventId, reason: 'INVALID_CREDENTIAL', method, ip });
+    return { status: 404, body: { error: 'Invitation not recognized. Please check the link from your invitation.' } };
+  }
+  const r = resolveGuestInvite(raw);
+  if (r.error) {
+    rejected({ eventId, reason: r.status === 410 ? 'REVOKED_OR_EXPIRED' : 'INVALID_CREDENTIAL', method, ip });
+    return { status: r.status, body: { error: r.error } };
+  }
+  if (r.inv.event_id !== eventId) {
+    // Valid credential for a DIFFERENT event: reject without revealing it.
+    rejected({ eventId, reason: 'WRONG_EVENT', method, invitationId: r.inv.id, guestId: r.guest.id, ip });
+    return { status: 403, body: { error: 'This invitation is not valid for this event.' } };
+  }
+  const lc = getLifecycle(eventId);
+  if (!writePolicy(lc, 'checkin.perform').ok || (!lifecycleAllows(lc, 'checkin') && lc !== 'CLOSING')) {
+    rejected({ eventId, reason: 'LIFECYCLE_CLOSED', method, invitationId: r.inv.id, guestId: r.guest.id, ip });
+    return { status: 409, body: { error: `Check-in is not open for this event (${lc}). Please see staff.` } };
+  }
+  const guest = db.prepare('SELECT id, event_id, name, status FROM guests WHERE id = ?').get(r.guest.id);
+  if (!guest || guest.status !== 'approved') {
+    rejected({ eventId, reason: 'GUEST_NOT_APPROVED', method, invitationId: r.inv.id, guestId: r.guest.id, ip });
+    return { status: 403, body: { error: 'This invitation cannot be used for check-in. Please see staff.' } };
+  }
+  const activity = defaultActivity(eventId);
+  if (!activity) {
+    rejected({ eventId, reason: 'NO_CHECKIN_POINT', method, invitationId: r.inv.id, guestId: guest.id, ip });
+    return { status: 409, body: { error: 'Check-in is not ready yet. Please see staff.' } };
+  }
+  const already = (row) => ({ ok: true, already: true, guest_name: guest.name, checked_in_at: row.checked_in_at, rsvp_status: rsvpPublic(r.rsvp), seat: seatForGuest(eventId, guest.id) });
+  const existing = db.prepare('SELECT * FROM checkins WHERE guest_id = ? AND activity_id = ?').get(guest.id, activity.id);
+  if (existing) {
+    rejected({ eventId, reason: 'ALREADY_CHECKED_IN', method, invitationId: r.inv.id, guestId: guest.id, ip });
+    return { status: 200, body: already(existing) };
+  }
+  const ins = insertCheckin({ guestId: guest.id, activityId: activity.id, staffId, method, invitationId: r.inv.id });
+  if (ins.duplicate) {
+    const dup = db.prepare('SELECT * FROM checkins WHERE guest_id = ? AND activity_id = ?').get(guest.id, activity.id);
+    rejected({ eventId, reason: 'ALREADY_CHECKED_IN', method, invitationId: r.inv.id, guestId: guest.id, ip });
+    return { status: 200, body: already(dup) };
+  }
+  logAudit({
+    eventId, actorId: actorId || null, action: 'checkin.perform', entityType: 'checkin', entityId: ins.id,
+    metadata: { guest_id: guest.id, activity_id: activity.id, method, invitation_id: r.inv.id, actor: staffId ? 'staff' : 'guest' },
+    ip: ip || null,
+  });
+  const row = checkinRow(ins.id);
+  return { status: 201, body: { ok: true, guest_name: guest.name, checked_in_at: row.checked_in_at, activity_name: row.activity_name, rsvp_status: rsvpPublic(r.rsvp), seat: seatForGuest(eventId, guest.id) } };
+}
+
+// Seat assignment for a guest (server-resolved; null when unassigned).
+// Shared by check-in responses, journey context, and staff scan results.
+export function seatForGuest(eventId, guestId) {
+  try {
+    return db.prepare(`
+      SELECT sa.guest_id, sa.seated_at, sa.seated_via, z.id AS zone_id, z.name AS zone_name, z.kind, z.location
+      FROM seat_assignments sa JOIN seating_zones z ON z.id = sa.zone_id
+      WHERE sa.event_id = ? AND sa.guest_id = ?
+    `).get(eventId, guestId) || null;
+  } catch {
+    return null;
+  }
+}
+
 router.post('/self-checkin/:code/checkin', (req, res) => {
   const event = db.prepare('SELECT id, name, date, venue FROM events WHERE self_checkin_code = ?').get(req.params.code);
   if (!event) {
     rejected({ eventId: null, reason: 'UNKNOWN_VENUE_CODE', method: 'SELF_SERVICE_QR', ip: req.ip });
     return res.status(404).json({ error: 'Check-in point not recognized.' });
   }
-  const raw = extractInviteToken(req.body?.token);
-  if (!raw) {
-    rejected({ eventId: event.id, reason: 'INVALID_CREDENTIAL', method: 'SELF_SERVICE_QR', ip: req.ip });
-    return res.status(404).json({ error: 'Invitation not recognized. Please check the link from your invitation.' });
-  }
-  const r = resolveGuestInvite(raw);
-  if (r.error) {
-    rejected({ eventId: event.id, reason: r.status === 410 ? 'REVOKED_OR_EXPIRED' : 'INVALID_CREDENTIAL', method: 'SELF_SERVICE_QR', ip: req.ip });
-    return res.status(r.status).json({ error: r.error });
-  }
-  if (r.inv.event_id !== event.id) {
-    // Valid credential for a DIFFERENT event: reject without revealing it.
-    rejected({ eventId: event.id, reason: 'WRONG_EVENT', method: 'SELF_SERVICE_QR', invitationId: r.inv.id, guestId: r.guest.id, ip: req.ip });
-    return res.status(403).json({ error: 'This invitation is not valid for this event.' });
-  }
-  const lc = getLifecycle(event.id);
-  if (!writePolicy(lc, 'checkin.perform').ok || (!lifecycleAllows(lc, 'checkin') && lc !== 'CLOSING')) {
-    rejected({ eventId: event.id, reason: 'LIFECYCLE_CLOSED', method: 'SELF_SERVICE_QR', invitationId: r.inv.id, guestId: r.guest.id, ip: req.ip });
-    return res.status(409).json({ error: `Check-in is not open for this event (${lc}). Please see staff.` });
-  }
-  const guest = db.prepare('SELECT id, event_id, name, status FROM guests WHERE id = ?').get(r.guest.id);
-  if (!guest || guest.status !== 'approved') {
-    rejected({ eventId: event.id, reason: 'GUEST_NOT_APPROVED', method: 'SELF_SERVICE_QR', invitationId: r.inv.id, guestId: r.guest.id, ip: req.ip });
-    return res.status(403).json({ error: 'This invitation cannot be used for check-in. Please see staff.' });
-  }
-  const activity = defaultActivity(event.id);
-  if (!activity) {
-    rejected({ eventId: event.id, reason: 'NO_CHECKIN_POINT', method: 'SELF_SERVICE_QR', invitationId: r.inv.id, guestId: guest.id, ip: req.ip });
-    return res.status(409).json({ error: 'Check-in is not ready yet. Please see staff.' });
-  }
-  const existing = db.prepare('SELECT * FROM checkins WHERE guest_id = ? AND activity_id = ?').get(guest.id, activity.id);
-  if (existing) {
-    rejected({ eventId: event.id, reason: 'ALREADY_CHECKED_IN', method: 'SELF_SERVICE_QR', invitationId: r.inv.id, guestId: guest.id, ip: req.ip });
-    return res.json({ ok: true, already: true, guest_name: guest.name, checked_in_at: existing.checked_in_at, rsvp_status: rsvpPublic(r.rsvp) });
-  }
-  const ins = insertCheckin({ guestId: guest.id, activityId: activity.id, staffId: null, method: 'SELF_SERVICE_QR', invitationId: r.inv.id });
-  if (ins.duplicate) {
-    const dup = db.prepare('SELECT * FROM checkins WHERE guest_id = ? AND activity_id = ?').get(guest.id, activity.id);
-    rejected({ eventId: event.id, reason: 'ALREADY_CHECKED_IN', method: 'SELF_SERVICE_QR', invitationId: r.inv.id, guestId: guest.id, ip: req.ip });
-    return res.json({ ok: true, already: true, guest_name: guest.name, checked_in_at: dup.checked_in_at, rsvp_status: rsvpPublic(r.rsvp) });
-  }
-  logAudit({
-    eventId: event.id, actorId: null, action: 'checkin.perform', entityType: 'checkin', entityId: ins.id,
-    metadata: { guest_id: guest.id, activity_id: activity.id, method: 'SELF_SERVICE_QR', invitation_id: r.inv.id, actor: 'guest' },
-    ip: req.ip || null,
-  });
-  const row = checkinRow(ins.id);
-  res.status(201).json({ ok: true, guest_name: guest.name, checked_in_at: row.checked_in_at, activity_name: row.activity_name, rsvp_status: rsvpPublic(r.rsvp) });
+  const out = performInvitationCheckin({ eventId: event.id, tokenPayload: req.body?.token, method: 'SELF_SERVICE_QR', ip: req.ip });
+  return res.status(out.status).json(out.body);
 });
 
 // ---- PATH B: staff scans guest invitation QR ----
@@ -217,7 +241,7 @@ router.post('/checkins/qr', requireAuth, withIdempotency((req, res) => {
   }
   auditFromReq(req, { action: 'checkin.perform', entityType: 'checkin', entityId: ins.id, eventId: r.event.id, metadata: { guest_id: guest.id, activity_id: activity.id, method: 'STAFF_QR', invitation_id: r.inv.id } });
   const row = checkinRow(ins.id);
-  res.status(201).json({ ...row, guest: { id: guest.id, name: guest.name, guest_count: guest.guest_count, table_number: guest.table_number }, rsvp_status: rsvpPublic(r.rsvp) });
+  res.status(201).json({ ...row, guest: { id: guest.id, name: guest.name, guest_count: guest.guest_count, table_number: guest.table_number }, rsvp_status: rsvpPublic(r.rsvp), seat: seatForGuest(r.event.id, guest.id) });
 }));
 
 export default router;

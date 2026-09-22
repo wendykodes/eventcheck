@@ -279,6 +279,12 @@ export default function DashboardPage() {
           </svg>
           Import CSV
         </Link>
+        <Link to={`/events/${eventId}/history`} className="btn btn-secondary btn-sm">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          History
+        </Link>
       </div>
     </div>
   );

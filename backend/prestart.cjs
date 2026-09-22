@@ -1,5 +1,5 @@
 // Self-healing native-module guard. Runs automatically before `npm start`
-// (npm `prestart` hook) in every environment: local, Railway, Render.
+// (npm `prestart` hook) in every environment: local and Railway.
 // If better-sqlite3 cannot load — e.g. a stale/wrong-ABI binary restored from
 // a build cache — rebuild it from source against the RUNTIME Node and verify
 // before the server boots. Exits non-zero with a clear message if the rebuild

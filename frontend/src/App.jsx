@@ -20,11 +20,14 @@ import AcceptInvitationPage from './pages/AcceptInvitationPage';
 import PendingApprovalPage from './pages/PendingApprovalPage';
 import GuestInvitePage from './pages/GuestInvitePage';
 import SelfCheckinPage from './pages/SelfCheckinPage';
+import JourneyHome from './pages/JourneyHome';
 import VenueQrPage from './pages/VenueQrPage';
 import OpsPage from './pages/OpsPage';
 import CommandPage from './pages/CommandPage';
 import GlobalCommandPage from './pages/GlobalCommandPage';
 import OperatorPage from './pages/OperatorPage';
+import OrganizationsPage from './pages/OrganizationsPage';
+import EventHistoryPage from './pages/EventHistoryPage';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children, adminOnly = false, user }) {
@@ -44,6 +47,7 @@ export default function App() {
       <Route path="/invitation/:token" element={auth.user ? <Navigate to="/" replace /> : <AcceptInvitationPage />} />
       <Route path="/invite/:token" element={<GuestInvitePage />} />
       <Route path="/self-checkin/:code" element={<SelfCheckinPage />} />
+      <Route path="/journey/:token" element={<JourneyHome />} />
       <Route path="/pending-approval/:requestId" element={auth.user ? <Navigate to="/" replace /> : <PendingApprovalPage />} />
       <Route path="/" element={
         <ProtectedRoute user={auth.user}>
@@ -61,8 +65,10 @@ export default function App() {
         <Route path="events/:eventId/checkin-qr" element={<VenueQrPage />} />
         <Route path="events/:eventId/ops" element={<OpsPage />} />
         <Route path="events/:eventId/command" element={<CommandPage />} />
+        <Route path="events/:eventId/history" element={<EventHistoryPage />} />
         <Route path="command" element={<GlobalCommandPage />} />
         <Route path="operator" element={<OperatorPage />} />
+        <Route path="organizations" element={<OrganizationsPage />} />
         <Route path="users" element={<ProtectedRoute user={auth.user} adminOnly><UsersPage /></ProtectedRoute>} />
         <Route path="pending" element={<ProtectedRoute user={auth.user} adminOnly><PendingRequestsPage /></ProtectedRoute>} />
         <Route path="staff/:staffId" element={<ProtectedRoute user={auth.user} adminOnly><StaffDetailPage /></ProtectedRoute>} />

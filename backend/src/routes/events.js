@@ -51,7 +51,7 @@ router.get('/:id', (req, res) => {
 
 router.post('/', requireAdmin, (req, res) => {
   try {
-    const { name, date, venue, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state } = req.body;
+    const { name, date, venue, venue_id, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Event name is required' });
     // Validate template_key against seeded templates; fall back to default.
     let tpl = template_key || 'private_celebration';
@@ -63,13 +63,26 @@ router.post('/', requireAdmin, (req, res) => {
       const org = db.prepare('SELECT id FROM organizations WHERE id = ?').get(org_id);
       if (!org) return res.status(400).json({ error: 'Organization not found' });
     }
+    // Optional venue link: copies the venue name into the display field.
+    let venueName = venue && String(venue).trim() ? String(venue).trim() : '';
+    let venueId = null;
+    if (venue_id != null) {
+      const v = db.prepare('SELECT id, name, org_id FROM venues WHERE id = ?').get(venue_id);
+      if (!v) return res.status(400).json({ error: 'Venue not found' });
+      if (org_id != null && v.org_id != null && v.org_id !== Number(org_id)) {
+        return res.status(400).json({ error: 'Venue belongs to a different organization' });
+      }
+      venueId = v.id;
+      if (!venueName) venueName = v.name;
+    }
     const lifecycle = lifecycle_state && LIFECYCLE_STATES.includes(lifecycle_state) ? lifecycle_state : 'DRAFT';
     const result = db.prepare(
-      'INSERT INTO events (name, date, venue, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state, onboarding_method, config_json, self_checkin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO events (name, date, venue, venue_id, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state, onboarding_method, config_json, self_checkin_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
       name.trim(),
       date && String(date).trim() ? String(date).trim() : '',
-      venue && String(venue).trim() ? String(venue).trim() : '',
+      venueName,
+      venueId,
       description && String(description).trim() ? String(description).trim() : null,
       status || lifecycleToLegacyStatus(lifecycle),
       tpl,
@@ -102,8 +115,49 @@ router.post('/', requireAdmin, (req, res) => {
   }
 });
 
+// Phase 6 — clone event STRUCTURE for reuse. Copies activities, schedule
+// items and seating zones only. People, guests, RSVPs, check-ins, tasks,
+// incidents and all operational data are NEVER copied.
+router.post('/:id/clone', requireAdmin, (req, res) => {
+  const source = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+  if (!source) return res.status(404).json({ error: 'Event not found' });
+  const { name, date } = req.body;
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required for the cloned event' });
+  const tx = db.transaction(() => {
+    const r = db.prepare(`INSERT INTO events (name, date, venue, venue_id, description, status, template_key, org_id, timezone, start_time, end_time,
+        expected_attendance, max_capacity, lifecycle_state, onboarding_method, config_json, self_checkin_code)
+      VALUES (?, ?, ?, ?, ?, 'upcoming', ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)`)
+      .run(String(name).trim(), date || '', source.venue, source.venue_id, source.description, source.template_key,
+        source.org_id, source.timezone, source.start_time, source.end_time, source.expected_attendance, source.max_capacity,
+        source.onboarding_method, source.config_json, crypto.randomBytes(16).toString('hex'));
+    const nid = r.lastInsertRowid;
+    db.prepare('INSERT OR IGNORE INTO user_events (user_id, event_id) VALUES (?, ?)').run(req.user.id, nid);
+    for (const a of db.prepare('SELECT name, sort_order FROM activities WHERE event_id = ? ORDER BY sort_order ASC').all(source.id)) {
+      db.prepare('INSERT INTO activities (event_id, name, sort_order) VALUES (?, ?, ?)').run(nid, a.name, a.sort_order);
+    }
+    for (const s of db.prepare('SELECT title, description, location, planned_start, planned_end, priority, sort_order, notes FROM schedule_items WHERE event_id = ?').all(source.id)) {
+      db.prepare(`INSERT INTO schedule_items (event_id, title, description, location, planned_start, planned_end, priority, sort_order, notes, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(nid, s.title, s.description, s.location, s.planned_start, s.planned_end, s.priority || 'MEDIUM', s.sort_order || 0, s.notes, req.user.id);
+    }
+    for (const z of db.prepare('SELECT name, kind, capacity, location, notes FROM seating_zones WHERE event_id = ?').all(source.id)) {
+      db.prepare('INSERT INTO seating_zones (event_id, name, kind, capacity, location, notes) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(nid, z.name, z.kind, z.capacity, z.location, z.notes);
+    }
+    return nid;
+  });
+  let eventId;
+  try {
+    eventId = tx();
+  } catch (err) {
+    return res.status(400).json({ error: 'Failed to clone event: ' + err.message });
+  }
+  auditFromReq(req, { action: 'event.clone', entityType: 'event', entityId: eventId, eventId, metadata: { from_event: Number(req.params.id) } });
+  res.status(201).json(shapeEvent(db.prepare('SELECT * FROM events WHERE id = ?').get(eventId)));
+});
+
 router.put('/:id', requireAdmin, (req, res) => {
-  const { name, date, venue, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, config_json } = req.body;
+  const { name, date, venue, venue_id, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, config_json } = req.body;
   const existing = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   if (!checkFresh(existing, req.body, res)) return;
@@ -115,14 +169,31 @@ router.put('/:id', requireAdmin, (req, res) => {
     const org = db.prepare('SELECT id FROM organizations WHERE id = ?').get(org_id);
     if (!org) return res.status(400).json({ error: 'Organization not found' });
   }
+  let venueId = existing.venue_id;
+  let venueName = venue !== undefined ? venue : existing.venue;
+  if (venue_id !== undefined) {
+    if (venue_id === null) {
+      venueId = null;
+    } else {
+      const v = db.prepare('SELECT id, name, org_id FROM venues WHERE id = ?').get(venue_id);
+      if (!v) return res.status(400).json({ error: 'Venue not found' });
+      const effOrg = org_id !== undefined ? org_id : existing.org_id;
+      if (effOrg != null && v.org_id != null && v.org_id !== Number(effOrg)) {
+        return res.status(400).json({ error: 'Venue belongs to a different organization' });
+      }
+      venueId = v.id;
+      if (venue === undefined) venueName = v.name;
+    }
+  }
   // Lifecycle changes must go through the transition endpoint; reject direct edits.
   db.prepare(`
-    UPDATE events SET name=?, date=?, venue=?, description=?, status=?, template_key=?, org_id=?, timezone=?, start_time=?, end_time=?, expected_attendance=?, max_capacity=?, config_json=?, updated_at=strftime('%Y-%m-%d %H:%M:%f','now')
+    UPDATE events SET name=?, date=?, venue=?, venue_id=?, description=?, status=?, template_key=?, org_id=?, timezone=?, start_time=?, end_time=?, expected_attendance=?, max_capacity=?, config_json=?, updated_at=strftime('%Y-%m-%d %H:%M:%f','now')
     WHERE id=?
   `).run(
     name ?? existing.name,
     date !== undefined ? date : existing.date,
-    venue !== undefined ? venue : existing.venue,
+    venueName,
+    venueId,
     description !== undefined ? description : existing.description,
     status ?? existing.status,
     template_key ?? existing.template_key,
@@ -183,8 +254,22 @@ router.post('/:id/roles', requireAdmin, (req, res) => {
   db.prepare('INSERT OR IGNORE INTO user_events (user_id, event_id) VALUES (?, ?)').run(user_id, req.params.id);
   db.prepare('INSERT OR IGNORE INTO event_user_roles (event_id, user_id, role_key, zone) VALUES (?, ?, ?, ?)')
     .run(req.params.id, user_id, role_key, zone || null);
-  auditFromReq(req, { action: 'event.role.assign', entityType: 'event_user_role', entityId: `${req.params.id}:${user_id}:${role_key}`, eventId: Number(req.params.id), metadata: { user_id, role_key, zone } });
-  res.status(201).json({ ok: true });
+  // Phase 6: deterministic double-booking warning (warn-not-block). Same user
+  // on another non-closed event with the same date.
+  let warnings = [];
+  try {
+    const thisEvent = db.prepare('SELECT date FROM events WHERE id = ?').get(req.params.id);
+    if (thisEvent && thisEvent.date) {
+      warnings = db.prepare(`
+        SELECT e.id, e.name, e.date, e.lifecycle_state FROM user_events ue
+        JOIN events e ON e.id = ue.event_id
+        WHERE ue.user_id = ? AND e.id != ? AND e.date = ?
+          AND e.lifecycle_state NOT IN ('CLOSED','ARCHIVED','CANCELLED')`).all(user_id, req.params.id, thisEvent.date)
+        .map((e) => ({ type: 'double_booked', event_id: e.id, event_name: e.name, date: e.date, lifecycle_state: e.lifecycle_state }));
+    }
+  } catch {}
+  auditFromReq(req, { action: 'event.role.assign', entityType: 'event_user_role', entityId: `${req.params.id}:${user_id}:${role_key}`, eventId: Number(req.params.id), metadata: { user_id, role_key, zone, warnings: warnings.length } });
+  res.status(201).json({ ok: true, warnings });
 });
 
 router.delete('/:id/roles/:roleId', requireAdmin, (req, res) => {

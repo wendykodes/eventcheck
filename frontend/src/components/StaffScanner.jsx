@@ -51,13 +51,23 @@ export default function StaffScanner({ activityId, onCheckedIn, onFallback }) {
           try {
             const key = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
             const ci = await api.staffQrCheckin(decodedText, activityId, key);
-            setResult({ state: 'SUCCESS', text: 'Checked in', guest_name: ci.guest_name || ci.guest?.name, rsvp_status: ci.rsvp_status, time: ci.checked_in_at });
+            setResult({ state: 'SUCCESS', text: 'Checked in', guest_name: ci.guest_name || ci.guest?.name, rsvp_status: ci.rsvp_status, time: ci.checked_in_at, seat: ci.seat || null, token: decodedText, seated: !!(ci.seat && ci.seat.seated_at) });
             setStats((s) => ({ ...s, ok: s.ok + 1 }));
             onCheckedIn?.();
           } catch (err) {
             const c = classify(err);
             const dup = c.state === 'ALREADY';
-            setResult({ ...c, guest_name: err?.guest_name });
+            // Already checked in: pull the seat card so staff can still
+            // direct + confirm seating without rescanning.
+            let seat = null;
+            if (dup) {
+              try {
+                const look = await api.seatLookup(decodedText);
+                seat = look.seat || null;
+                if (look.guest_name && !err?.guest_name) c.guest_name = look.guest_name;
+              } catch {}
+            }
+            setResult({ ...c, guest_name: err?.guest_name || c.guest_name, token: decodedText, seat, seated: !!(seat && seat.seated_at) });
             setStats((s) => ({ ...s, ...(dup ? { dup: s.dup + 1 } : { rej: s.rej + 1 }) }));
           } finally {
             // Rapid next-scan flow: auto-ready without navigation.
@@ -118,6 +128,27 @@ export default function StaffScanner({ activityId, onCheckedIn, onFallback }) {
           <p className="text-sm text-[var(--color-text-secondary)]">{result.text}</p>
           {result.rsvp_status && <p className="text-xs text-[var(--color-text-secondary)]">RSVP: {result.rsvp_status}</p>}
           {result.time && <p className="text-xs text-[var(--color-text-secondary)]">{result.time}</p>}
+          {result.seat && (
+            <p className="font-bold">
+              🪑 {result.seat.zone_name}{result.seated ? ' · seated' : ''}
+              {result.seat.location ? <span className="block text-xs font-normal text-[var(--color-text-secondary)]">{result.seat.location}</span> : null}
+            </p>
+          )}
+          {(result.state === 'SUCCESS' || result.state === 'ALREADY') && result.seat && !result.seated && (
+            <button
+              onClick={async () => {
+                try {
+                  await api.staffSeatConfirm(result.token);
+                  setResult((r) => ({ ...r, seated: true, text: r.state === 'SUCCESS' ? 'Checked in + seated' : r.text }));
+                } catch (e) {
+                  setResult((r) => ({ ...r, text: `Seating confirm failed: ${e.message}` }));
+                }
+              }}
+              className="btn btn-success btn-sm mx-auto"
+            >
+              Confirm seated
+            </button>
+          )}
           <button
             onClick={async () => { clearTimeout(resumeTimer.current); setResult(null); busyRef.current = false; try { await scannerRef.current?.resume(); } catch {} }}
             className="btn btn-secondary btn-sm mx-auto"

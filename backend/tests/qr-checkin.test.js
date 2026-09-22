@@ -14,6 +14,7 @@ function ok(name, cond, detail = '') {
 }
 
 let adminToken = null;
+const knownAdminTokens = new Set();
 async function req(method, path, { token, body, key } = {}) {
   const call = async (tok) => {
     const res = await fetch(`${API}${path}`, {
@@ -26,11 +27,9 @@ async function req(method, path, { token, body, key } = {}) {
     return { status: res.status, data, replayed: res.headers.get('Idempotent-Replayed') };
   };
   let r = await call(token);
-  // Single-session auth: if another admin login rotated our session mid-run
-  // (e.g. overlapping runs/devices), re-login once and retry. Not a product
-  // bug — the API correctly enforces one session per user.
-  if (r.status === 401 && token && token === adminToken && typeof adminLogin === 'function') {
+  if (r.status === 401 && token && knownAdminTokens.has(token)) {
     adminToken = await adminLogin();
+    knownAdminTokens.add(adminToken);
     r = await call(adminToken);
   }
   return r;
@@ -41,6 +40,7 @@ const adminLogin = async () => (await req('POST', '/auth/login', { body: { pin: 
 async function main() {
   const admin = await adminLogin();
   adminToken = admin;
+  knownAdminTokens.add(admin);
   ok('admin login', !!admin);
 
   const mkEvent = async (name) => (await req('POST', '/events', { token: admin, body: { name, date: '2026-12-25', venue: 'Hall', template_key: 'wedding' } })).data;

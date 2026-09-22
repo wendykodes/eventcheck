@@ -23,6 +23,7 @@ const TABS = [
   { key: 'runbook', label: 'Runbook' },
   { key: 'devices', label: 'Devices' },
   { key: 'comms', label: 'Comms' },
+  { key: 'services', label: 'Services' },
 ];
 
 const NEXT = {
@@ -121,7 +122,7 @@ export default function OpsPage() {
           <h1 className="text-[22px] font-bold tracking-tight">Operations</h1>
           <Link to={`/events/${eventId}`} className="text-[13px] text-[var(--color-text-secondary)]">← Dashboard</Link>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="btn btn-primary btn-sm" style={{ display: tab === 'runbook' || tab === 'comms' ? 'none' : undefined }}>+ New</button>
+        <button onClick={() => setShowForm(!showForm)} className="btn btn-primary btn-sm" style={{ display: tab === 'runbook' || tab === 'comms' || tab === 'services' ? 'none' : undefined }}>+ New</button>
       </div>
 
       <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
@@ -133,7 +134,7 @@ export default function OpsPage() {
         ))}
       </div>
 
-      {showForm && tab !== 'runbook' && tab !== 'comms' && (
+      {showForm && tab !== 'runbook' && tab !== 'comms' && tab !== 'services' && (
         <form onSubmit={submit} className="card p-4 space-y-3 animate-scale-in">
           <input value={form.title || form.name || form.description || ''} required
             onChange={(e) => setForm((f) => ({ ...f, ...(tab === 'requests' ? { description: e.target.value } : tab === 'stays' ? { name: e.target.value } : { title: e.target.value }) }))}
@@ -173,6 +174,8 @@ export default function OpsPage() {
         <RunbookPanel eventId={eventId} />
       ) : tab === 'comms' ? (
         <CommsPanel eventId={eventId} />
+      ) : tab === 'services' ? (
+        <ServicesPanel eventId={eventId} />
       ) : loading ? <SkeletonCard lines={4} /> : data.length === 0 ? (
         <EmptyState title={`No ${TABS.find((t) => t.key === tab).label}`} message="Nothing here yet. Create the first item." />
       ) : (
@@ -213,6 +216,76 @@ export default function OpsPage() {
       )}
 
       {tab === 'seating' && <SeatingPanel eventId={eventId} zones={zones} guests={guests} reload={load} />}
+    </div>
+  );
+}
+
+// Guest service menu config (Guest Journey §15): what guests can order.
+// Guests only ever see available items, grouped by kind on their phone.
+function ServicesPanel({ eventId }) {
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState({ label: '', kind: 'DRINK' });
+
+  const reload = useCallback(async () => {
+    try { setItems(await api.getServiceMenu(eventId)); } catch (err) { toast.error(err.message); }
+  }, [eventId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    if (!form.label.trim()) return;
+    try {
+      await api.createServiceMenuItem({ event_id: Number(eventId), label: form.label.trim(), kind: form.kind });
+      setForm({ label: '', kind: 'DRINK' });
+      toast.success('Service added');
+      reload();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const toggle = async (item) => {
+    try {
+      await api.updateServiceMenuItem(item.id, { available: !item.available });
+      reload();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const remove = async (item) => {
+    if (!window.confirm(`Remove "${item.label}" from the guest menu?`)) return;
+    try {
+      await api.deleteServiceMenuItem(item.id);
+      toast.success('Removed');
+      reload();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <form onSubmit={add} className="card p-4 flex gap-2">
+        <input value={form.label} required onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} placeholder="New item (e.g. Mocktail) *" className="input-field flex-1" />
+        <select value={form.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))} className="input-field w-32">
+          <option value="DRINK">Drink</option>
+          <option value="BITE">Bite</option>
+          <option value="ASSISTANCE">Help</option>
+          <option value="OTHER">Other</option>
+        </select>
+        <button type="submit" className="btn btn-secondary btn-sm shrink-0">Add</button>
+      </form>
+      {items.length === 0 ? (
+        <EmptyState title="No guest services" message="Add drinks, bites, or help options guests can request from their phone." />
+      ) : (
+        <div className="card-flat divide-y divide-[var(--color-border)] overflow-hidden">
+          {items.map((item) => (
+            <div key={item.id} className="p-3 flex items-center gap-3 text-sm">
+              <span className={`font-semibold flex-1 ${item.available ? '' : 'line-through opacity-50'}`}>
+                {item.label} <span className="text-[var(--color-text-secondary)] font-normal">· {item.kind.toLowerCase()}</span>
+              </span>
+              <button onClick={() => toggle(item)} className="btn btn-ghost btn-sm">{item.available ? 'Hide' : 'Show'}</button>
+              <button onClick={() => remove(item)} className="btn btn-ghost btn-sm text-red-500">Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

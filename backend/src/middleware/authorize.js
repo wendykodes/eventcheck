@@ -138,3 +138,50 @@ export function guestEventId(req) {
   const row = db.prepare('SELECT event_id FROM guests WHERE id = ?').get(req.params.id);
   return row ? row.event_id : null;
 }
+
+// Phase 6 — organization membership gate. Admins pass everywhere; otherwise
+// the user must hold an organization_users row for the resolved org. Resolves
+// org from params.orgId/:id (org-mounted routes), ?org_id=, or body.org_id.
+// Sets req.orgId + req.orgRole ('owner'|'manager'|'member'|null for admin).
+export function orgIdFromReq(req) {
+  if (req.params) {
+    if (req.params.orgId) return Number(req.params.orgId);
+    if (req.params.id && req.baseUrl && req.baseUrl.includes('/organizations')) return Number(req.params.id);
+  }
+  if (req.query && req.query.org_id) return Number(req.query.org_id);
+  if (req.body && typeof req.body === 'object' && req.body.org_id) return Number(req.body.org_id);
+  return null;
+}
+
+export function requireOrgAccess({ allowAdmin = true } = {}) {
+  return (req, res, next) => {
+    const orgId = orgIdFromReq(req);
+    if (!orgId || Number.isNaN(orgId)) {
+      return res.status(400).json({ error: 'org_id is required' });
+    }
+    const org = db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId);
+    if (!org) return res.status(404).json({ error: 'Organization not found' });
+    if (req.user.role === 'admin' && allowAdmin) {
+      req.orgId = orgId;
+      req.orgRole = null;
+      return next();
+    }
+    let link = null;
+    try {
+      link = db.prepare('SELECT org_role FROM organization_users WHERE org_id = ? AND user_id = ?').get(orgId, req.user.id);
+    } catch {}
+    if (!link) return res.status(403).json({ error: 'No access to this organization' });
+    req.orgId = orgId;
+    req.orgRole = link.org_role;
+    next();
+  };
+}
+
+// Org owners/managers (or admin) for management writes.
+export function requireOrgManager() {
+  return (req, res, next) => {
+    if (req.user.role === 'admin') return next();
+    if (req.orgRole === 'owner' || req.orgRole === 'manager') return next();
+    return res.status(403).json({ error: 'Organization owner or manager required' });
+  };
+}
