@@ -14,9 +14,6 @@ export default function LoginPage({ onLogin }) {
   const [confirmPin, setConfirmPin] = useState(['', '', '', '', '', '']);
   const [confirmActiveIdx, setConfirmActiveIdx] = useState(0);
   const [setupStep, setSetupStep] = useState(0);
-  const [showAdminSetup, setShowAdminSetup] = useState(false);
-  const [adminSetupPin, setAdminSetupPin] = useState('');
-  const [loginAttempts, setLoginAttempts] = useState(0);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -43,45 +40,11 @@ export default function LoginPage({ onLogin }) {
       onLogin(data.token, data.user);
       toast.success(`Welcome, ${data.user.name}!`);
     } catch (err) {
-      setLoginAttempts(prev => {
-        const newAttempts = prev + 1;
-        if (newAttempts >= 2) {
-          setShowAdminSetup(true);
-          toast.error('Login failed. Try setting up the admin PIN first.');
-        } else {
-          toast.error(err.message);
-        }
-        return newAttempts;
-      });
+      toast.error(err.message);
       setPin(['', '', '', '', '', '']);
       setActiveIdx(0);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleAdminSetup = async (e) => {
-    e.preventDefault();
-    const pinStr = adminSetupPin.trim();
-    if (pinStr.length < 4 || pinStr.length > 6 || !/^\d+$/.test(pinStr)) {
-      toast.error('Enter a 4-6 digit PIN');
-      return;
-    }
-    try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/auth/setup-admin-pin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_pin: pinStr })
-      });
-      const data = await response.json();
-      if (data.success) {
-        toast.success('Admin PIN set! Now try logging in.');
-        setShowAdminSetup(false);
-        setAdminSetupPin('');
-        setLoginAttempts(0);
-      }
-    } catch (err) {
-      toast.error('Failed to set admin PIN');
     }
   };
 
@@ -323,34 +286,6 @@ export default function LoginPage({ onLogin }) {
             </button>
           </div>
         </form>
-
-        {showAdminSetup && (
-          <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
-            <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-3">Database Reset Detected</h3>
-            <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">The database was reset after deployment. Set a new admin PIN:</p>
-            <form onSubmit={handleAdminSetup} className="space-y-3">
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={adminSetupPin}
-                onChange={(e) => setAdminSetupPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-[#1c1c1e] text-sm"
-                placeholder="Enter 4-6 digit PIN"
-              />
-              <div className="flex gap-2">
-                <button type="submit" className="flex-1 h-10 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium">
-                  Set PIN
-                </button>
-                <button type="button" onClick={() => { setShowAdminSetup(false); setLoginAttempts(0); }}
-                  className="flex-1 h-10 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] text-sm font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
 
         <p className="text-center text-xs text-[#86868b] mt-6">PIN-only authentication</p>
         <Link to="/register" className="block text-center text-sm text-primary-500 hover:text-primary-600 mt-3 font-medium">
