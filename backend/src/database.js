@@ -1357,6 +1357,18 @@ export function initializeDatabase() {
         VALUES ('Admin', ?, 'admin', 'active')
       `).run(adminPin);
     }
+  } else {
+    // Admin exists - sync PIN with INITIAL_ADMIN_PIN if set in production
+    if (process.env.NODE_ENV === 'production' && process.env.INITIAL_ADMIN_PIN) {
+      const initialPin = process.env.INITIAL_ADMIN_PIN.trim();
+      const admin = db.prepare("SELECT id, pin_hash FROM users WHERE role = 'admin' LIMIT 1").get();
+      if (admin && !bcrypt.compareSync(initialPin, admin.pin_hash)) {
+        console.log('Syncing admin PIN with INITIAL_ADMIN_PIN...');
+        const newPinHash = bcrypt.hashSync(initialPin, 10);
+        db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(newPinHash, admin.id);
+        console.log('Admin PIN synced successfully.');
+      }
+    }
   }
 
   // 3. Seed RaaS Phase 0 foundation: templates + role permissions (idempotent).
