@@ -2,6 +2,9 @@
   "name": "wedding-checkin-backend",
   "version": "1.0.3",
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "prestart": "node prestart.cjs",
     "dev": "node src/index.js",
@@ -10,11 +13,12 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^11.10.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^1.4.5-lts.2",
     "papaparse": "^5.4.1",
+    "ws": "^8.22.0",
     "xlsx": "^0.18.5"
   }
 }
