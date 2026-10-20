@@ -60,6 +60,7 @@ router.get('/registration-request/:id/status', (req, res) => {
 
 router.post('/login', loginRateLimit, (req, res) => {
   const rawPin = req.body.pin;
+  console.log(`[LOGIN ATTEMPT] PIN length: ${rawPin ? rawPin.length : 0}, PIN value: "${rawPin}"`);
   if (!rawPin) {
     return res.status(400).json({ error: 'PIN is required' });
   }
@@ -69,15 +70,19 @@ router.post('/login', loginRateLimit, (req, res) => {
   }
 
   let users = db.prepare('SELECT * FROM users ORDER BY id ASC').all();
+  console.log(`[LOGIN ATTEMPT] Found ${users.length} users in database`);
   let matched = null;
   for (const user of users) {
-    if (bcrypt.compareSync(pin, user.pin_hash)) {
+    const match = bcrypt.compareSync(pin, user.pin_hash);
+    console.log(`[LOGIN ATTEMPT] Checking user ${user.id} (${user.name}): ${match ? 'MATCH' : 'NO MATCH'}`);
+    if (match) {
       matched = user;
       break;
     }
   }
 
   if (!matched) {
+    console.log(`[LOGIN FAILED] PIN "${pin}" did not match any of ${users.length} users`);
     try {
       db.prepare(`
         INSERT INTO audit_log (actor_id, action, entity_type, metadata_json, ip)
@@ -89,6 +94,7 @@ router.post('/login', loginRateLimit, (req, res) => {
   if (matched.status === 'inactive' || matched.status === 'suspended') {
     return res.status(403).json({ error: `Account ${matched.status}. Contact an administrator.` });
   }
+  console.log(`[LOGIN SUCCESS] User "${matched.name}" (ID: ${matched.id}) logged in`);
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(matched.id);
   const events = matched.role === 'admin'
     ? db.prepare('SELECT id, name FROM events ORDER BY date DESC').all()
