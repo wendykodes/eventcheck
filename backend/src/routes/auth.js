@@ -56,6 +56,31 @@ router.get('/debug-admin-exists', (req, res) => {
   });
 });
 
+// Reset admin PIN endpoint (requires INITIAL_ADMIN_PIN for security)
+router.post('/reset-admin-pin', loginRateLimit, (req, res) => {
+  const { initial_pin, new_pin } = req.body;
+  
+  // Verify the INITIAL_ADMIN_PIN matches
+  if (!initial_pin || initial_pin !== process.env.INITIAL_ADMIN_PIN) {
+    return res.status(403).json({ error: 'Invalid initial PIN' });
+  }
+  
+  if (!new_pin || !/^\d{4,6}$/.test(new_pin)) {
+    return res.status(400).json({ error: 'New PIN must be 4-6 digits' });
+  }
+  
+  const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
+  if (!admin) {
+    return res.status(404).json({ error: 'No admin user found' });
+  }
+  
+  const newPinHash = bcrypt.hashSync(new_pin, 10);
+  db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(newPinHash, admin.id);
+  
+  console.log(`[PIN RESET] Admin PIN reset successfully`);
+  res.json({ success: true, message: 'Admin PIN reset successfully' });
+});
+
 router.get('/debug-db', requireAuth, requireAdmin, (req, res) => {
   res.json({
     dbPath,
