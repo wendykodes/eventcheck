@@ -44,18 +44,6 @@ router.get('/debug-admin-status', requireAuth, requireAdmin, (req, res) => {
   });
 });
 
-// Public debug endpoint to check if admin exists (no auth required for debugging)
-router.get('/debug-admin-exists', (req, res) => {
-  const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
-  const admin = db.prepare("SELECT id, name, status FROM users WHERE role = 'admin' LIMIT 1").get();
-  res.json({
-    admin_exists: adminCount > 0,
-    admin: admin ? { id: admin.id, name: admin.name, status: admin.status } : null,
-    has_initial_pin: !!process.env.INITIAL_ADMIN_PIN,
-    node_env: process.env.NODE_ENV
-  });
-});
-
 router.get('/debug-db', requireAuth, requireAdmin, (req, res) => {
   res.json({
     dbPath,
