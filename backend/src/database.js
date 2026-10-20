@@ -1362,7 +1362,7 @@ export function initializeDatabase() {
     if (process.env.NODE_ENV === 'production' && process.env.INITIAL_ADMIN_PIN) {
       const initialPin = process.env.INITIAL_ADMIN_PIN.trim();
       const admin = db.prepare("SELECT id, pin_hash FROM users WHERE role = 'admin' LIMIT 1").get();
-      if (admin && !bcrypt.compareSync(initialPin, admin.pin_hash)) {
+      if (admin) {
         console.log('Syncing admin PIN with INITIAL_ADMIN_PIN...');
         const newPinHash = bcrypt.hashSync(initialPin, 10);
         db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(newPinHash, admin.id);
