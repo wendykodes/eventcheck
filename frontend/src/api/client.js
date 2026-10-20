@@ -29,6 +29,7 @@ async function request(path, options = {}) {
     const errData = await res.json().catch(() => ({ error: 'Unauthorized' }));
     throw new Error(errData.error || 'Session expired. Please log in again.');
   }
+  if (options.raw) return res.blob();
   const data = await res.json();
   if (!res.ok) {
     const err = new Error(data.error || 'Request failed');
@@ -45,6 +46,10 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  get: (path) => request(path),
+  post: (path, data) => request(path, { method: 'POST', body: JSON.stringify(data) }),
+  put: (path, data) => request(path, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (path) => request(path, { method: 'DELETE' }),
   login: (pin) => request('/auth/login', { method: 'POST', body: JSON.stringify({ pin }) }),
   setupPin: (tempToken, pin) => request('/auth/setup-pin', { method: 'POST', body: JSON.stringify({ temp_token: tempToken, pin }) }),
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
@@ -67,6 +72,8 @@ export const api = {
   createEvent: (data) => request('/events', { method: 'POST', body: JSON.stringify(data) }),
   updateEvent: (id, data) => request(`/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEvent: (id) => request(`/events/${id}`, { method: 'DELETE' }),
+  getEventAnalytics: (eventId) => request(`/events/${eventId}/analytics`),
+  compareEvents: (eventIds) => request(`/events/compare?event_ids=${eventIds}`),
   getGuests: (eventId, q, limit) => request(`/guests?event_id=${eventId}${q ? `&q=${encodeURIComponent(q)}` : ''}${limit ? `&limit=${limit}` : ''}`),
   getPlatform: () => request('/platform'),
   getPendingGuests: (eventId) => request(`/guests?event_id=${eventId}&status=pending`),
@@ -101,19 +108,96 @@ export const api = {
   getImportHistory: (eventId) => request(`/guests/import/history/${eventId}`),
   bulkGuests: (eventId, guestIds, action, value) => request('/guests/bulk', { method: 'POST', body: JSON.stringify({ event_id: eventId, guest_ids: guestIds, action, value }) }),
   getStaffDashboard: () => request('/staff/dashboard'),
+  getStaffEventRoles: () => request('/staff/event-roles'),
   getLeaderboard: (eventId) => request(`/staff/leaderboard${eventId ? `?event_id=${eventId}` : ''}`),
+  getShifts: (eventId) => request(`/shifts?event_id=${eventId}`),
+  createShift: (data) => request('/shifts', { method: 'POST', body: JSON.stringify(data) }),
+  clockIn: (shiftId) => request(`/shifts/${shiftId}/clock-in`, { method: 'POST' }),
+  clockOut: (shiftId) => request(`/shifts/${shiftId}/clock-out`, { method: 'POST' }),
+  breakStart: (shiftId) => request(`/shifts/${shiftId}/break-start`, { method: 'POST' }),
+  breakEnd: (shiftId) => request(`/shifts/${shiftId}/break-end`, { method: 'POST' }),
+  getOnDuty: (eventId) => request(`/shifts/on-duty?event_id=${eventId}`),
+  getMySession: () => request('/shifts/my-session'),
+  getShiftOvertime: (shiftId) => request(`/shifts/${shiftId}/overtime`),
+  getShiftTemplates: () => request('/shifts/templates'),
+  createShiftTemplate: (data) => request('/shifts/templates', { method: 'POST', body: JSON.stringify(data) }),
+  getAnnouncements: (eventId) => request(`/announcements?event_id=${eventId}`),
+  createAnnouncement: (data) => request('/announcements', { method: 'POST', body: JSON.stringify(data) }),
+  deleteAnnouncement: (id) => request(`/announcements/${id}`, { method: 'DELETE' }),
+  getAnnouncementTemplates: (eventId) => request(`/announcements/templates?event_id=${eventId}`),
+  createAnnouncementTemplate: (data) => request('/announcements/templates', { method: 'POST', body: JSON.stringify(data) }),
+  deleteAnnouncementTemplate: (id) => request(`/announcements/templates/${id}`, { method: 'DELETE' }),
+  submitFeedback: (data) => request('/feedback', { method: 'POST', body: JSON.stringify(data) }),
+  getFeedback: (eventId) => request(`/feedback/${eventId}`),
+  getFeedbackSummary: (eventId) => request(`/feedback/${eventId}/summary`),
+  getAuditLog: (eventId, filters) => request(`/audit/event/${eventId}${filters ? `?${new URLSearchParams(filters).toString()}` : ''}`),
+  exportAuditLog: (eventId, filters) => request(`/audit/event/${eventId}/export${filters ? `?${new URLSearchParams(filters).toString()}` : ''}`, { method: 'GET', raw: true }),
+  getSkills: (userId) => request(`/skills/skills/${userId}`),
+  addSkill: (data) => request('/skills/skills', { method: 'POST', body: JSON.stringify(data) }),
+  updateSkill: (id, data) => request(`/skills/skills/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSkill: (id) => request(`/skills/skills/${id}`, { method: 'DELETE' }),
+  getCertifications: (userId) => request(`/skills/certifications/${userId}`),
+  addCertification: (data) => request('/skills/certifications', { method: 'POST', body: JSON.stringify(data) }),
+  updateCertification: (id, data) => request(`/skills/certifications/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCertification: (id) => request(`/skills/certifications/${id}`, { method: 'DELETE' }),
+  uploadImage: (formData) => {
+    return fetch(`${API_BASE}/images/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: formData
+    }).then(res => res.json());
+  },
+  getImages: (entityType, entityId) => request(`/images/${entityType}/${entityId}`),
+  setPrimaryImage: (id) => request(`/images/${id}/primary`, { method: 'PUT' }),
+  deleteImage: (id) => request(`/images/${id}`, { method: 'DELETE' }),
+  getMenus: (eventId) => request(`/menus?event_id=${eventId}`),
+  addMenuItem: (data) => request('/menus', { method: 'POST', body: JSON.stringify(data) }),
+  updateMenuItem: (id, data) => request(`/menus/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMenuItem: (id) => request(`/menus/${id}`, { method: 'DELETE' }),
+  getMenuCategories: (eventId) => request(`/menus/categories?event_id=${eventId}`),
+  addMenuCategory: (data) => request('/menus/categories', { method: 'POST', body: JSON.stringify(data) }),
+  getSeatingZones: (eventId) => request(`/seating/zones?event_id=${eventId}`),
+  addSeatingZone: (data) => request('/seating/zones', { method: 'POST', body: JSON.stringify(data) }),
+  updateSeatingZone: (id, data) => request(`/seating/zones/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSeatingZone: (id) => request(`/seating/zones/${id}`, { method: 'DELETE' }),
+  getSeatingTables: (eventId, zoneId) => request(`/seating/tables?event_id=${eventId}${zoneId ? `&zone_id=${zoneId}` : ''}`),
+  addSeatingTable: (data) => request('/seating/tables', { method: 'POST', body: JSON.stringify(data) }),
+  updateSeatingTable: (id, data) => request(`/seating/tables/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSeatingTable: (id) => request(`/seating/tables/${id}`, { method: 'DELETE' }),
+  getSeatingAssignments: (eventId) => request(`/seating/assignments?event_id=${eventId}`),
+  addSeatingAssignment: (data) => request('/seating/assignments', { method: 'POST', body: JSON.stringify(data) }),
+  updateSeatingAssignment: (id, data) => request(`/seating/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSeatingAssignment: (id) => request(`/seating/assignments/${id}`, { method: 'DELETE' }),
+  getWayfindingRoutes: (eventId) => request(`/wayfinding/routes?event_id=${eventId}`),
+  addWayfindingRoute: (data) => request('/wayfinding/routes', { method: 'POST', body: JSON.stringify(data) }),
+  updateWayfindingRoute: (id, data) => request(`/wayfinding/routes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteWayfindingRoute: (id) => request(`/wayfinding/routes/${id}`, { method: 'DELETE' }),
   getActivityPerformance: (eventId) => request(`/staff/activity-performance?event_id=${eventId}`),
   getStaffTimeline: (userId) => request(`/staff/timeline${userId ? `?user_id=${userId}` : ''}`),
   getStaffStats: (id) => request(`/staff/stats/${id}`),
+  getBudgets: (eventId) => request(`/events/${eventId}/budgets`),
+  createBudget: (eventId, data) => request(`/events/${eventId}/budgets`, { method: 'POST', body: JSON.stringify(data) }),
+  approveFinance: (eventId, financeId) => request(`/events/${eventId}/finances/${financeId}/approve`, { method: 'PUT' }),
+  rejectFinance: (eventId, financeId) => request(`/events/${eventId}/finances/${financeId}/reject`, { method: 'PUT' }),
+  exportFinances: (eventId) => {
+    window.location.href = `/api/events/${eventId}/finances/export`;
+  },
   getRegistrationStatus: (id) => request(`/auth/registration-request/${id}/status`),
   // Phase 1 — guest invitations, RSVP, readiness, report, lifecycle
   openGuestInvite: (token) => request(`/guest-invite/${encodeURIComponent(token)}`),
-  submitRsvp: (token, response, note) => request(`/guest-invite/${encodeURIComponent(token)}/rsvp`, { method: 'POST', body: JSON.stringify({ response, note }) }),
+  submitRsvp: (token, response, note, attendeeCount, dietaryPreferences) => request(`/guest-invite/${encodeURIComponent(token)}/rsvp`, { method: 'POST', body: JSON.stringify({ response, note, attendee_count: attendeeCount, dietary_preferences: dietaryPreferences }) }),
   createGuestInvites: (eventId, guestIds) => request('/guest-invites', { method: 'POST', body: JSON.stringify({ event_id: eventId, guest_ids: guestIds }) }),
   getGuestInvites: (eventId) => request(`/guest-invites?event_id=${eventId}`),
   resendGuestInvite: (id) => request(`/guest-invites/${id}/resend`, { method: 'POST' }),
   revokeGuestInvite: (id) => request(`/guest-invites/${id}/revoke`, { method: 'POST' }),
+  remindGuestInvites: (eventId) => request('/guest-invites/remind', { method: 'POST', body: JSON.stringify({ event_id: eventId }) }),
   getRsvpSummary: (eventId) => request(`/rsvp-summary?event_id=${eventId}`),
+  getRsvpReport: (eventId, page, limit, search) => request(`/rsvp-report?event_id=${eventId}${page ? `&page=${page}` : ''}${limit ? `&limit=${limit}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`),
+  exportRsvpReport: (eventId) => {
+    window.location.href = `/api/rsvp-report/export?event_id=${eventId}`;
+  },
   getReadiness: (eventId) => request(`/event/${eventId}/readiness`),
   getEventReport: (eventId) => request(`/event/${eventId}/report`),
   transitionLifecycle: (eventId, to) => request(`/events/${eventId}/lifecycle`, { method: 'POST', body: JSON.stringify({ to }) }),
@@ -121,6 +205,11 @@ export const api = {
   // Phase 2 — QR access & dual check-in
   getVenueQr: (eventId) => request(`/events/${eventId}/checkin-qr`),
   rotateVenueQr: (eventId) => request(`/events/${eventId}/checkin-qr/rotate`, { method: 'POST' }),
+  trackQrScan: (eventId, data) => request(`/events/${eventId}/checkin-qr/track`, { method: 'POST', body: JSON.stringify(data) }),
+  getQrAnalytics: (eventId) => request(`/events/${eventId}/checkin-qr/analytics`),
+  createZoneQr: (eventId, data) => request(`/events/${eventId}/checkin-qr/zone`, { method: 'POST', body: JSON.stringify(data) }),
+  getQrTemplates: (eventId) => request(`/events/${eventId}/checkin-qr/templates`),
+  createQrTemplate: (eventId, data) => request(`/events/${eventId}/checkin-qr/templates`, { method: 'POST', body: JSON.stringify(data) }),
   resolveSelfCheckin: (code) => request(`/self-checkin/${encodeURIComponent(code)}`),
   selfCheckin: (code, token) => request(`/self-checkin/${encodeURIComponent(code)}/checkin`, { method: 'POST', body: JSON.stringify({ token }) }),
   staffQrCheckin: (token, activity_id, key) => request('/checkins/qr', { method: 'POST', headers: key ? { 'Idempotency-Key': key } : {}, body: JSON.stringify({ token, activity_id }) }),
@@ -228,6 +317,10 @@ export const api = {
   updateContract: (id, data) => request(`/contracts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteContract: (id) => request(`/contracts/${id}`, { method: 'DELETE' }),
   createTemplate: (data) => request('/templates', { method: 'POST', body: JSON.stringify(data) }),
+  getTemplate: (key) => request(`/templates/${key}`),
+  updateTemplate: (key, data) => request(`/templates/${key}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTemplate: (key) => request(`/templates/${key}`, { method: 'DELETE' }),
+  getTemplatePermissions: () => request('/templates/permissions'),
   templateFromEvent: (eventId, data) => request(`/templates/from-event/${eventId}`, { method: 'POST', body: JSON.stringify(data) }),
   cloneEvent: (eventId, data) => request(`/events/${eventId}/clone`, { method: 'POST', body: JSON.stringify(data) }),
   // Phase 7 — intelligence (deterministic, explainable)

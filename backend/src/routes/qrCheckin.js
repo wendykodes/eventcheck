@@ -174,8 +174,12 @@ export function performInvitationCheckin({ eventId, tokenPayload, method = 'SELF
 export function seatForGuest(eventId, guestId) {
   try {
     return db.prepare(`
-      SELECT sa.guest_id, sa.seated_at, sa.seated_via, z.id AS zone_id, z.name AS zone_name, z.kind, z.location
-      FROM seat_assignments sa JOIN seating_zones z ON z.id = sa.zone_id
+      SELECT sa.guest_id, sa.seated_at, sa.seated_via, sa.seat_viewed_at, sa.seat_number,
+             z.id AS zone_id, z.name AS zone_name, z.kind, z.location, z.map_x, z.map_y,
+             t.table_number
+      FROM seating_assignments sa
+      LEFT JOIN seating_zones z ON z.id = sa.zone_id
+      LEFT JOIN seating_tables t ON t.id = sa.table_id
       WHERE sa.event_id = ? AND sa.guest_id = ?
     `).get(eventId, guestId) || null;
   } catch {
@@ -243,5 +247,65 @@ router.post('/checkins/qr', requireAuth, withIdempotency((req, res) => {
   const row = checkinRow(ins.id);
   res.status(201).json({ ...row, guest: { id: guest.id, name: guest.name, guest_count: guest.guest_count, table_number: guest.table_number }, rsvp_status: rsvpPublic(r.rsvp), seat: seatForGuest(r.event.id, guest.id) });
 }));
+
+// ---- QR Analytics ----
+router.post('/events/:eventId/checkin-qr/track', (req, res) => {
+  const { zone, outcome, qr_code } = req.body;
+  db.prepare(`
+    INSERT INTO qr_scans (event_id, qr_code, zone, ip_address, user_agent, outcome)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.eventId, qr_code || 'unknown', zone || null, req.ip, req.headers['user-agent'], outcome || 'SUCCESS');
+  res.json({ ok: true });
+});
+
+router.get('/events/:eventId/checkin-qr/analytics', requireAuth, requireEventAccess(), (req, res) => {
+  const stats = db.prepare(`
+    SELECT 
+      COUNT(*) AS total_scans,
+      COUNT(CASE WHEN outcome = 'SUCCESS' THEN 1 END) AS successful,
+      COUNT(CASE WHEN outcome = 'FAILURE' THEN 1 END) AS failed,
+      COUNT(CASE WHEN outcome = 'INVALID' THEN 1 END) AS invalid,
+      COUNT(CASE WHEN zone IS NOT NULL THEN 1 END) AS zone_specific,
+      strftime('%H', scanned_at) AS hour,
+      COUNT(*) AS count
+    FROM qr_scans WHERE event_id = ?
+    GROUP BY hour
+    ORDER BY hour
+  `).all(req.eventId);
+  
+  const summary = db.prepare(`
+    SELECT 
+      COUNT(*) AS total_scans,
+      COUNT(CASE WHEN outcome = 'SUCCESS' THEN 1 END) AS successful,
+      COUNT(CASE WHEN outcome = 'FAILURE' THEN 1 END) AS failed,
+      COUNT(CASE WHEN outcome = 'INVALID' THEN 1 END) AS invalid,
+      COUNT(DISTINCT ip_address) AS unique_ips
+    FROM qr_scans WHERE event_id = ?
+  `).get(req.eventId);
+  
+  res.json({ stats, summary });
+});
+
+router.post('/events/:eventId/checkin-qr/zone', requireAuth, requireEventAccess(), requirePermission('event.update'), (req, res) => {
+  const { zone } = req.body;
+  const code = crypto.randomBytes(16).toString('hex');
+  auditFromReq(req, { action: 'qr.zone.created', entityType: 'qr_code', entityId: null, eventId: req.eventId, metadata: { zone } });
+  res.json({ code, zone });
+});
+
+router.get('/events/:eventId/checkin-qr/templates', requireAuth, requireEventAccess(), (req, res) => {
+  const templates = db.prepare('SELECT * FROM qr_templates WHERE event_id = ? ORDER BY name').all(req.eventId);
+  res.json(templates);
+});
+
+router.post('/events/:eventId/checkin-qr/templates', requireAuth, requireEventAccess(), requirePermission('event.update'), (req, res) => {
+  const { name, zone, brand_color, custom_logo_url, custom_message } = req.body;
+  const result = db.prepare(`
+    INSERT INTO qr_templates (event_id, name, zone, brand_color, custom_logo_url, custom_message)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.eventId, name, zone || null, brand_color || '#000000', custom_logo_url || null, custom_message || null);
+  auditFromReq(req, { action: 'qr.template.create', entityType: 'qr_template', entityId: result.lastInsertRowid, eventId: req.eventId });
+  res.status(201).json(db.prepare('SELECT * FROM qr_templates WHERE id = ?').get(result.lastInsertRowid));
+});
 
 export default router;

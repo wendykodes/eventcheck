@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { formatUgandanPhoneNumber } from './phoneUtils.js';
 import { LIFECYCLE_STATES, legacyStatusToLifecycle } from './raas/lifecycle.js';
-import { DEFAULT_ROLE_PERMISSIONS } from './raas/permissions.js';
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSIONS } from './raas/permissions.js';
 import { EVENT_TEMPLATES } from './raas/templates.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,7 +15,8 @@ const __dirname = dirname(__filename);
 let dbPath = process.env.DATABASE_PATH;
 if (!dbPath) {
   try {
-    // Check if standard Railway volume directory exists and is writable
+    // Check if the persistent volume directory exists and is writable
+    // (Render disk mounted at /data).
     accessSync('/data', constants.W_OK);
     dbPath = '/data/data.db';
     console.log('Using persistent SQLite database at /data/data.db');
@@ -87,6 +88,7 @@ function migrate() {
   const eventCols = db.prepare("PRAGMA table_info('events')").all().map(c => c.name);
   if (!eventCols.includes('staff_access_code')) db.exec("ALTER TABLE events ADD COLUMN staff_access_code TEXT");
   if (!eventCols.includes('onboarding_method')) db.exec("ALTER TABLE events ADD COLUMN onboarding_method TEXT NOT NULL DEFAULT 'approval'");
+  if (!eventCols.includes('rsvp_deadline')) db.exec("ALTER TABLE events ADD COLUMN rsvp_deadline TEXT");
   const guestCols = db.prepare("PRAGMA table_info('guests')").all().map(c => c.name);
   if (!guestCols.includes('status')) db.exec("ALTER TABLE guests ADD COLUMN status TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('approved', 'pending', 'rejected'))");
   if (!guestCols.includes('submitted_by')) db.exec('ALTER TABLE guests ADD COLUMN submitted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
@@ -112,6 +114,66 @@ function migrate() {
   // Phase 1: guest-scoped invitations (nullable for legacy staff invites).
   if (!invCols.includes('guest_id')) db.exec('ALTER TABLE invitations ADD COLUMN guest_id INTEGER REFERENCES guests(id) ON DELETE CASCADE');
   if (!invCols.includes('opened_at')) db.exec('ALTER TABLE invitations ADD COLUMN opened_at TEXT');
+  
+  // Images table - add media_type column
+  const imgCols = db.prepare("PRAGMA table_info('images')").all().map(c => c.name);
+  if (!imgCols.includes('media_type')) {
+    db.exec("ALTER TABLE images ADD COLUMN media_type TEXT NOT NULL DEFAULT 'image' CHECK(media_type IN ('image', 'video', 'document'))");
+  }
+  
+  // Custom invitations table
+  const customInvitesCols = db.prepare("PRAGMA table_info('custom_invites')").all().map(c => c.name);
+  if (customInvitesCols.length === 0) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS custom_invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT NOT NULL UNIQUE,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT,
+        max_uses INTEGER NOT NULL DEFAULT 1,
+        uses_used INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'revoked')),
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_custom_invites_event ON custom_invites(event_id);
+      CREATE INDEX IF NOT EXISTS idx_custom_invites_token ON custom_invites(token);
+    `);
+  } else {
+    // Add token column if it doesn't exist
+    if (!customInvitesCols.includes('token')) {
+      db.exec('ALTER TABLE custom_invites ADD COLUMN token TEXT NOT NULL UNIQUE');
+      // Generate tokens for existing rows
+      const rows = db.prepare('SELECT id FROM custom_invites WHERE token IS NULL').all();
+      for (const row of rows) {
+        const token = crypto.randomBytes(24).toString('hex');
+        db.prepare('UPDATE custom_invites SET token = ? WHERE id = ?').run(token, row.id);
+      }
+    }
+  }
+  
+  // Custom invite sends table - track which guests were sent which custom invites
+  const customInviteSendsCols = db.prepare("PRAGMA table_info('custom_invite_sends')").all().map(c => c.name);
+  if (customInviteSendsCols.length === 0) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS custom_invite_sends (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        custom_invite_id INTEGER NOT NULL REFERENCES custom_invites(id) ON DELETE CASCADE,
+        guest_id INTEGER NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+        sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+        sent_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        opened_at TEXT,
+        clicked_at TEXT,
+        UNIQUE (custom_invite_id, guest_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_custom_invite_sends_invite ON custom_invite_sends(custom_invite_id);
+      CREATE INDEX IF NOT EXISTS idx_custom_invite_sends_guest ON custom_invite_sends(guest_id);
+    `);
+  }
+  
   // Events: universal engine columns (org, lifecycle, template, capacity, config).
   const evCols2 = db.prepare("PRAGMA table_info('events')").all().map(c => c.name);
   if (!evCols2.includes('org_id')) db.exec('ALTER TABLE events ADD COLUMN org_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL');
@@ -224,6 +286,8 @@ function migrate() {
       kind TEXT NOT NULL DEFAULT 'TABLE' CHECK(kind IN ('TABLE','ZONE','VIP','STAFF','ACCESSIBLE')),
       capacity INTEGER,
       location TEXT,
+      map_x REAL,
+      map_y REAL,
       notes TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -238,6 +302,7 @@ function migrate() {
       seated_at TEXT,
       seated_via TEXT CHECK(seated_via IN ('GUEST', 'STAFF')),
       seated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      seat_viewed_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (event_id, guest_id),
       UNIQUE (zone_id, guest_id)
@@ -434,6 +499,7 @@ function migrate() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
       sender_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      guest_id INTEGER REFERENCES guests(id) ON DELETE SET NULL,
       recipients_text TEXT,
       channel TEXT NOT NULL DEFAULT 'OPERATOR' CHECK(channel IN ('WHATSAPP','SMS','EMAIL','IN_APP','OPERATOR')),
       message TEXT NOT NULL,
@@ -445,8 +511,28 @@ function migrate() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_comms_event ON communications(event_id);
+
+    -- Phase 7: learned baselines (incremental means over CLOSED events).
+    -- org_id 0 = cross-org global for a template; org-specific rows win.
+    CREATE TABLE IF NOT EXISTS learning_baselines (
+      org_id INTEGER NOT NULL DEFAULT 0,
+      template_key TEXT NOT NULL DEFAULT '*',
+      metric TEXT NOT NULL,
+      n INTEGER NOT NULL DEFAULT 0,
+      mean REAL NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (org_id, template_key, metric)
+    );
+    CREATE TABLE IF NOT EXISTS learned_events (
+      event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+      learned_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
-  // Column repair for DBs created before the notes field existed.
+  // Column repair for DBs created before later fields existed.
+  try {
+    const commCols = db.prepare("PRAGMA table_info('communications')").all().map((c) => c.name);
+    if (commCols.length && !commCols.includes('guest_id')) db.exec('ALTER TABLE communications ADD COLUMN guest_id INTEGER REFERENCES guests(id) ON DELETE SET NULL');
+  } catch {}
   try {
     const incCols = db.prepare("PRAGMA table_info('incidents')").all().map((c) => c.name);
     if (incCols.length && !incCols.includes('notes')) db.exec('ALTER TABLE incidents ADD COLUMN notes TEXT');
@@ -455,6 +541,18 @@ function migrate() {
   try {
     const zCols = db.prepare("PRAGMA table_info('seating_zones')").all().map((c) => c.name);
     if (zCols.length && !zCols.includes('updated_at')) db.exec("ALTER TABLE seating_zones ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+    if (zCols.length && !zCols.includes('description')) db.exec("ALTER TABLE seating_zones ADD COLUMN description TEXT");
+    if (zCols.length && !zCols.includes('color')) db.exec("ALTER TABLE seating_zones ADD COLUMN color TEXT DEFAULT '#6366f1'");
+    if (zCols.length && !zCols.includes('map_x')) db.exec("ALTER TABLE seating_zones ADD COLUMN map_x REAL");
+    if (zCols.length && !zCols.includes('map_y')) db.exec("ALTER TABLE seating_zones ADD COLUMN map_y REAL");
+    const tCols = db.prepare("PRAGMA table_info('seating_tables')").all().map((c) => c.name);
+    if (tCols.length && !tCols.includes('map_x')) db.exec("ALTER TABLE seating_tables ADD COLUMN map_x REAL");
+    if (tCols.length && !tCols.includes('map_y')) db.exec("ALTER TABLE seating_tables ADD COLUMN map_y REAL");
+    if (tCols.length && !tCols.includes('rotation')) db.exec("ALTER TABLE seating_tables ADD COLUMN rotation REAL DEFAULT 0");
+    const aCols = db.prepare("PRAGMA table_info('seating_assignments')").all().map((c) => c.name);
+    if (aCols.length && !aCols.includes('seat_number')) db.exec("ALTER TABLE seating_assignments ADD COLUMN seat_number TEXT");
+    const miCols = db.prepare("PRAGMA table_info('menu_items')").all().map((c) => c.name);
+    if (miCols.length && !miCols.includes('category_id')) db.exec("ALTER TABLE menu_items ADD COLUMN category_id INTEGER REFERENCES menu_categories(id) ON DELETE SET NULL");
   } catch {}
   // --- RSVP Ownership Rule (locked Phase 1): dedicated rsvps table. ---
   // invitation_id = primary business owner; event_id = isolation boundary;
@@ -470,6 +568,7 @@ function migrate() {
       responded_via TEXT NOT NULL DEFAULT 'GUEST_LINK' CHECK(responded_via IN ('GUEST_LINK', 'STAFF', 'ORGANIZER', 'RAAS_OPERATOR')),
       attendee_count INTEGER,
       guest_note TEXT,
+      dietary_preferences TEXT,
       response_version INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -518,6 +617,16 @@ function migrate() {
     }
   } catch (e) {
     console.error('RSVP backfill notice:', e.message);
+  }
+
+  // --- Add dietary_preferences to rsvps table ---
+  try {
+    const rsvpCols = db.prepare("PRAGMA table_info('rsvps')").all().map(c => c.name);
+    if (!rsvpCols.includes('dietary_preferences')) {
+      db.exec("ALTER TABLE rsvps ADD COLUMN dietary_preferences TEXT");
+    }
+  } catch (e) {
+    console.error('RSVP dietary_preferences migration notice:', e.message);
   }
 
   // --- Phase 2 QR Access & Dual Check-in: extend check-ins, venue QR code. ---
@@ -574,6 +683,158 @@ function migrate() {
     `);
   } catch (e) {
     console.error('Guest Journey migration notice:', e.message);
+  }
+
+  // --- Journey hardening: recorded direction, departure, zone coordinates. ---
+  // seat_viewed_at turns DIRECTED from a heuristic into a recorded signal: it
+  // is stamped the first time the guest's seat is served to them (journey
+  // context) or pulled by staff (seat lookup). checkins.departed_at records
+  // leaving without touching attendance history. seating_zones.map_x/map_y
+  // are optional 0-100 coordinates for the guest SVG map (NULL = directory).
+  try {
+    const saCols2 = db.prepare("PRAGMA table_info('seat_assignments')").all().map(c => c.name);
+    if (!saCols2.includes('seat_viewed_at')) db.exec('ALTER TABLE seat_assignments ADD COLUMN seat_viewed_at TEXT');
+    const ciCols2 = db.prepare("PRAGMA table_info('checkins')").all().map(c => c.name);
+    if (!ciCols2.includes('departed_at')) db.exec('ALTER TABLE checkins ADD COLUMN departed_at TEXT');
+    const zCols = db.prepare("PRAGMA table_info('seating_zones')").all().map(c => c.name);
+    if (!zCols.includes('map_x')) db.exec('ALTER TABLE seating_zones ADD COLUMN map_x REAL');
+    if (!zCols.includes('map_y')) db.exec('ALTER TABLE seating_zones ADD COLUMN map_y REAL');
+    const actCols = db.prepare("PRAGMA table_info('activities')").all().map(c => c.name);
+    if (!actCols.includes('zone')) db.exec('ALTER TABLE activities ADD COLUMN zone TEXT');
+    const annCols = db.prepare("PRAGMA table_info('announcements')").all().map(c => c.name);
+    if (!annCols.includes('zone')) db.exec('ALTER TABLE announcements ADD COLUMN zone TEXT');
+    if (!annCols.includes('delivery_channels')) db.exec('ALTER TABLE announcements ADD COLUMN delivery_channels TEXT');
+    const wrCols = db.prepare("PRAGMA table_info('wayfinding_routes')").all().map(c => c.name);
+    if (!wrCols.includes('accessibility')) db.exec('ALTER TABLE wayfinding_routes ADD COLUMN accessibility TEXT');
+  } catch (e) {
+    console.error('Journey hardening migration notice:', e.message);
+  }
+
+  // --- QR Code Analytics Tables ---
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS qr_scans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        qr_code TEXT NOT NULL,
+        zone TEXT,
+        scanned_at TEXT DEFAULT (datetime('now')),
+        ip_address TEXT,
+        user_agent TEXT,
+        outcome TEXT CHECK(outcome IN ('SUCCESS', 'FAILURE', 'INVALID', 'EXPIRED'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_qr_scans_event ON qr_scans(event_id);
+      CREATE INDEX IF NOT EXISTS idx_qr_scans_time ON qr_scans(scanned_at);
+
+      CREATE TABLE IF NOT EXISTS qr_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        zone TEXT,
+        brand_color TEXT DEFAULT '#000000',
+        custom_logo_url TEXT,
+        custom_message TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_qr_templates_event ON qr_templates(event_id);
+    `);
+  } catch (e) {
+    console.error('QR Analytics migration notice:', e.message);
+  }
+
+  // --- Finances and Budgeting Tables ---
+  try {
+    const efCols = db.prepare("PRAGMA table_info('event_finances')").all().map(c => c.name);
+    if (!efCols.includes('status')) db.exec('ALTER TABLE event_finances ADD COLUMN status TEXT DEFAULT \'PENDING\' CHECK(status IN (\'PENDING\', \'APPROVED\', \'PAID\', \'REJECTED\'))');
+    if (!efCols.includes('approved_by')) db.exec('ALTER TABLE event_finances ADD COLUMN approved_by INTEGER REFERENCES users(id)');
+    if (!efCols.includes('approved_at')) db.exec('ALTER TABLE event_finances ADD COLUMN approved_at TEXT');
+    if (!efCols.includes('invoice_number')) db.exec('ALTER TABLE event_finances ADD COLUMN invoice_number TEXT');
+    if (!efCols.includes('receipt_url')) db.exec('ALTER TABLE event_finances ADD COLUMN receipt_url TEXT');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_budgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        category TEXT NOT NULL,
+        subcategory TEXT,
+        budget_amount REAL NOT NULL,
+        spent_amount REAL DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_event_budgets_event ON event_budgets(event_id);
+
+      CREATE TABLE IF NOT EXISTS expense_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER REFERENCES expense_categories(id),
+        color TEXT DEFAULT '#6366f1',
+        sort_order INTEGER DEFAULT 0
+      );
+    `);
+  } catch (e) {
+    console.error('Finances migration notice:', e.message);
+  }
+
+  // --- Shift Management Tables ---
+  try {
+    const shiftCols = db.prepare("PRAGMA table_info('shifts')").all().map(c => c.name);
+    if (!shiftCols.includes('status')) db.exec('ALTER TABLE shifts ADD COLUMN status TEXT DEFAULT \'CONFIRMED\' CHECK(status IN (\'DRAFT\', \'CONFIRMED\', \'CANCELLED\'))');
+    if (!shiftCols.includes('template_id')) db.exec('ALTER TABLE shifts ADD COLUMN template_id INTEGER REFERENCES shift_templates(id)');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS shift_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        shift_type TEXT NOT NULL,
+        default_duration_hours INTEGER,
+        default_zone TEXT,
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS shift_conflicts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        shift_id INTEGER REFERENCES shifts(id) ON DELETE CASCADE,
+        conflict_type TEXT CHECK(conflict_type IN ('OVERLAP', 'DOUBLE_BOOK', 'MIN_REST')),
+        resolved BOOLEAN DEFAULT 0,
+        resolved_at TEXT,
+        resolved_by INTEGER REFERENCES users(id),
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_shift_conflicts_event ON shift_conflicts(event_id);
+    `);
+  } catch (e) {
+    console.error('Shifts migration notice:', e.message);
+  }
+
+  // --- Announcements Enhancements ---
+  try {
+    const annCols = db.prepare("PRAGMA table_info('announcements')").all().map(c => c.name);
+    if (!annCols.includes('status')) db.exec('ALTER TABLE announcements ADD COLUMN status TEXT DEFAULT \'PUBLISHED\' CHECK(status IN (\'DRAFT\', \'SCHEDULED\', \'PUBLISHED\', \'ARCHIVED\'))');
+    if (!annCols.includes('scheduled_at')) db.exec('ALTER TABLE announcements ADD COLUMN scheduled_at TEXT');
+    if (!annCols.includes('media_urls')) db.exec('ALTER TABLE announcements ADD COLUMN media_urls TEXT');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS announcement_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        title TEXT,
+        body TEXT,
+        priority TEXT DEFAULT 'normal',
+        delivery_channels TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_announcement_templates_event ON announcement_templates(event_id);
+    `);
+  } catch (e) {
+    console.error('Announcements migration notice:', e.message);
   }
 }
 
@@ -650,6 +911,7 @@ export function initializeDatabase() {
       staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       method TEXT NOT NULL DEFAULT 'MANUAL' CHECK(method IN ('SELF_SERVICE_QR', 'STAFF_QR', 'MANUAL')),
       invitation_id INTEGER REFERENCES invitations(id) ON DELETE SET NULL,
+      departed_at TEXT,
       checked_in_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -784,6 +1046,10 @@ export function initializeDatabase() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS permissions (
+      permission TEXT PRIMARY KEY
+    );
+
     CREATE TABLE IF NOT EXISTS role_permissions (
       role_key TEXT NOT NULL,
       permission TEXT NOT NULL,
@@ -798,6 +1064,205 @@ export function initializeDatabase() {
       zone TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE (event_id, user_id, role_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS shifts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      shift_type TEXT NOT NULL CHECK(shift_type IN ('morning', 'afternoon', 'evening', 'night')),
+      scheduled_start TEXT NOT NULL,
+      scheduled_end TEXT NOT NULL,
+      zone TEXT,
+      notes TEXT,
+      status TEXT DEFAULT 'CONFIRMED' CHECK(status IN ('CONFIRMED', 'CANCELLED', 'PENDING')),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS shift_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shift_id INTEGER NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      clocked_in_at TEXT NOT NULL,
+      clocked_out_at TEXT,
+      break_start TEXT,
+      break_end TEXT,
+      total_break_minutes INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'abandoned')),
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS announcements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      priority TEXT DEFAULT 'normal' CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT,
+      zone TEXT,
+      delivery_channels TEXT,
+      status TEXT DEFAULT 'PUBLISHED' CHECK(status IN ('DRAFT', 'SCHEDULED', 'PUBLISHED', 'ARCHIVED')),
+      scheduled_at TEXT,
+      media_urls TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS announcement_reads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      announcement_id INTEGER NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      guest_id INTEGER REFERENCES guests(id) ON DELETE SET NULL,
+      read_at TEXT DEFAULT (datetime('now')),
+      delivery_status TEXT DEFAULT 'pending' CHECK(delivery_status IN ('pending', 'delivered', 'failed')),
+      delivery_channel TEXT,
+      UNIQUE (announcement_id, user_id),
+      UNIQUE (announcement_id, guest_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS event_finances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      category TEXT NOT NULL CHECK(category IN ('revenue', 'expense')),
+      subcategory TEXT,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      currency TEXT DEFAULT 'USD',
+      recorded_at TEXT DEFAULT (datetime('now')),
+      recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      notes TEXT,
+      status TEXT DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'APPROVED', 'PAID', 'REJECTED')),
+      approved_by INTEGER REFERENCES users(id),
+      approved_at TEXT,
+      invoice_number TEXT,
+      receipt_url TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS resource_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      from_event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      to_event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      role_key TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      revoked_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS event_feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      guest_id INTEGER REFERENCES guests(id) ON DELETE SET NULL,
+      overall_rating INTEGER CHECK(overall_rating BETWEEN 1 AND 5),
+      service_rating INTEGER CHECK(service_rating BETWEEN 1 AND 5),
+      venue_rating INTEGER CHECK(venue_rating BETWEEN 1 AND 5),
+      food_rating INTEGER CHECK(food_rating BETWEEN 1 AND 5),
+      comment TEXT,
+      submitted_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('event', 'venue', 'guest', 'staff')),
+      entity_id INTEGER NOT NULL,
+      url TEXT NOT NULL,
+      alt_text TEXT,
+      is_primary INTEGER DEFAULT 0,
+      uploaded_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS menu_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      icon TEXT,
+      display_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      category_id INTEGER REFERENCES menu_categories(id) ON DELETE SET NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('DRINK', 'BITE', 'ASSISTANCE', 'OTHER')),
+      label TEXT NOT NULL,
+      description TEXT,
+      price REAL,
+      available INTEGER DEFAULT 1,
+      image_url TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS seating_zones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      capacity INTEGER,
+      map_x REAL,
+      map_y REAL,
+      color TEXT DEFAULT '#6366f1',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS seating_tables (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      zone_id INTEGER REFERENCES seating_zones(id) ON DELETE SET NULL,
+      table_number TEXT NOT NULL,
+      capacity INTEGER DEFAULT 4,
+      shape TEXT DEFAULT 'rectangular' CHECK(shape IN ('rectangular', 'round', 'square')),
+      map_x REAL,
+      map_y REAL,
+      rotation REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS seating_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      guest_id INTEGER REFERENCES guests(id) ON DELETE CASCADE,
+      table_id INTEGER REFERENCES seating_tables(id) ON DELETE SET NULL,
+      zone_id INTEGER REFERENCES seating_zones(id) ON DELETE SET NULL,
+      seat_number TEXT,
+      assigned_at TEXT DEFAULT (datetime('now')),
+      assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE (event_id, guest_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wayfinding_routes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      from_zone TEXT NOT NULL,
+      to_zone TEXT NOT NULL,
+      description TEXT,
+      distance_meters REAL,
+      estimated_minutes INTEGER,
+      instructions TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_skills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      skill_name TEXT NOT NULL,
+      proficiency_level TEXT DEFAULT 'beginner' CHECK(proficiency_level IN ('beginner', 'intermediate', 'advanced', 'expert')),
+      verified_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE (user_id, skill_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_certifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      certification_name TEXT NOT NULL,
+      issuer TEXT,
+      issue_date TEXT,
+      expiry_date TEXT,
+      certificate_number TEXT,
+      status TEXT DEFAULT 'active' CHECK(status IN ('active', 'expired', 'revoked')),
+      created_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS access_tokens (
@@ -920,6 +1385,8 @@ export function initializeDatabase() {
     for (const [roleKey, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
       for (const p of perms) upsertPerm.run(roleKey, p);
     }
+    const upsertPermission = db.prepare('INSERT OR IGNORE INTO permissions (permission) VALUES (?)');
+    for (const p of PERMISSIONS) upsertPermission.run(p);
   } catch (e) {
     console.error('Phase 0 seed notice:', e.message);
   }

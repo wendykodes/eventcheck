@@ -6,11 +6,12 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import db from '../database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-import { requireEventAccess, userHasEventAccess } from '../middleware/authorize.js';
+import { requireEventAccess, userHasEventAccess, effectivePermissions } from '../middleware/authorize.js';
 import { auditFromReq } from '../audit.js';
 import { LIFECYCLE_STATES, canTransition, lifecycleToLegacyStatus } from '../raas/lifecycle.js';
 import { getReadiness } from '../raas/readiness.js';
 import { checkFresh } from './opsCommon.js';
+import { learnEvent } from '../raas/learn.js';
 import { EVENT_ROLES } from '../raas/permissions.js';
 
 const router = Router();
@@ -51,14 +52,34 @@ router.get('/:id', (req, res) => {
 
 router.post('/', requireAdmin, (req, res) => {
   try {
-    const { name, date, venue, venue_id, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state } = req.body;
+    const { name, date, venue, venue_id, description, status, template_key, org_id, timezone, start_time, end_time, expected_attendance, max_capacity, lifecycle_state, template_config } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Event name is required' });
     // Validate template_key against seeded templates; fall back to default.
     let tpl = template_key || 'private_celebration';
-    const tplRow = db.prepare('SELECT key, default_settings_json FROM event_templates WHERE key = ?').get(tpl);
+    const tplRow = db.prepare('SELECT key, default_modules_json, default_roles_json, default_settings_json FROM event_templates WHERE key = ?').get(tpl);
     if (!tplRow) return res.status(400).json({ error: `Unknown template_key: ${tpl}` });
     let settings = {};
-    try { settings = JSON.parse(tplRow.default_settings_json || '{}'); } catch { settings = {}; }
+    let modules = [];
+    let roles = [];
+    try { 
+      settings = JSON.parse(tplRow.default_settings_json || '{}'); 
+      modules = JSON.parse(tplRow.default_modules_json || '[]');
+      roles = JSON.parse(tplRow.default_roles_json || '[]');
+    } catch { settings = {}; }
+    
+    // Override with template_config if provided
+    if (template_config) {
+      if (template_config.default_settings) {
+        settings = { ...settings, ...template_config.default_settings };
+      }
+      if (template_config.default_modules) {
+        modules = template_config.default_modules;
+      }
+      if (template_config.default_roles) {
+        roles = template_config.default_roles;
+      }
+    }
+    
     if (org_id != null) {
       const org = db.prepare('SELECT id FROM organizations WHERE id = ?').get(org_id);
       if (!org) return res.status(400).json({ error: 'Organization not found' });
@@ -94,10 +115,18 @@ router.post('/', requireAdmin, (req, res) => {
       max_capacity ?? null,
       lifecycle,
       settings.onboarding_method || 'approval',
-      JSON.stringify({ modules: settings.modules || undefined }),
+      JSON.stringify({ modules, template_config: { default_modules: modules, default_roles: roles, default_settings: settings } }),
       crypto.randomBytes(16).toString('hex'), // Phase 2: opaque venue-QR identity
     );
     const eventId = result.lastInsertRowid;
+    
+    // Seed event roles from template
+    if (roles && roles.length > 0) {
+      for (const role of roles) {
+        db.prepare('INSERT OR IGNORE INTO event_user_roles (event_id, user_id, role_key) VALUES (?, NULL, ?)').run(eventId, role);
+      }
+    }
+    
     try {
       db.prepare('INSERT OR IGNORE INTO user_events (user_id, event_id) VALUES (?, ?)').run(req.user.id, eventId);
     } catch {}
@@ -106,7 +135,7 @@ router.post('/', requireAdmin, (req, res) => {
     try {
       db.prepare("INSERT INTO activities (event_id, name, sort_order) VALUES (?, 'General Check-In', 0)").run(eventId);
     } catch {}
-    auditFromReq(req, { action: 'event.create', entityType: 'event', entityId: eventId, eventId, metadata: { template_key: tpl, lifecycle } });
+    auditFromReq(req, { action: 'event.create', entityType: 'event', entityId: eventId, eventId, metadata: { template_key: tpl, lifecycle, template_config } });
     const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
     res.status(201).json(shapeEvent(event));
   } catch (err) {
@@ -230,6 +259,15 @@ router.post('/:id/lifecycle', requireAdmin, (req, res) => {
   db.prepare("UPDATE events SET lifecycle_state = ?, status = ?, updated_at = datetime('now') WHERE id = ?")
     .run(to, lifecycleToLegacyStatus(to), req.params.id);
   auditFromReq(req, { action: 'event.lifecycle', entityType: 'event', entityId: req.params.id, eventId: Number(req.params.id), metadata: { from, to } });
+  // Phase 7: post-event learning on CLOSE. Best-effort: learning must never
+  // break the lifecycle transition itself.
+  if (to === 'CLOSED') {
+    try {
+      learnEvent(Number(req.params.id));
+    } catch (e) {
+      console.error('Post-event learning notice:', e.message);
+    }
+  }
   res.json(shapeEvent(db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id)));
 });
 
@@ -241,6 +279,21 @@ router.get('/:id/roles', requireEventAccess(), (req, res) => {
     WHERE eur.event_id = ? ORDER BY eur.created_at DESC
   `).all(req.eventId);
   res.json(rows);
+});
+
+// Get a user's effective permissions for an event
+router.get('/:id/users/:userId/permissions', requireEventAccess(), (req, res) => {
+  const { userId } = req.params;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  
+  const effective = effectivePermissions(userId, user.role, req.eventId);
+  if (effective === null) {
+    // Admin has all permissions
+    res.json(db.prepare('SELECT permission FROM permissions').all().map(p => p.permission));
+  } else {
+    res.json(Array.from(effective));
+  }
 });
 
 router.post('/:id/roles', requireAdmin, (req, res) => {
@@ -328,6 +381,307 @@ router.delete('/:id/access-code', requireAdmin, (req, res) => {
   db.prepare('UPDATE events SET staff_access_code = NULL, updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id);
   auditFromReq(req, { action: 'event.access_code.revoke', entityType: 'event', entityId: req.params.id, eventId: Number(req.params.id) });
   res.json({ ok: true });
+});
+
+// Event analytics (post-event reporting)
+router.get('/:id/analytics', requireEventAccess(), (req, res) => {
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  
+  // RSVP summary
+  const rsvp = db.prepare(`
+    SELECT 
+      COUNT(CASE WHEN rsvp_status = 'confirmed' THEN 1 END) AS confirmed,
+      COUNT(CASE WHEN rsvp_status = 'declined' THEN 1 END) AS declined,
+      COUNT(CASE WHEN rsvp_status = 'no_response' THEN 1 END) AS no_response,
+      ROUND(COUNT(CASE WHEN rsvp_status != 'no_response' THEN 1 END) * 100.0 / COUNT(*), 1) AS response_rate
+    FROM guests WHERE event_id = ?
+  `).get(req.params.id);
+  
+  // Attendance timeline (hourly check-ins)
+  const timeline = db.prepare(`
+    SELECT 
+      strftime('%H:00', checked_in_at) AS time,
+      COUNT(*) AS checked_in,
+      ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM checkins c JOIN guests g ON g.id = c.guest_id WHERE g.event_id = ?), 1) AS percent
+    FROM checkins c JOIN guests g ON g.id = c.guest_id
+    WHERE g.event_id = ? AND checked_in_at IS NOT NULL
+    GROUP BY strftime('%H', checked_in_at)
+    ORDER BY time
+  `).all(req.params.id, req.params.id);
+  
+  // Peak arrival
+  const peak = db.prepare(`
+    SELECT strftime('%H:%M', checked_in_at) AS time, COUNT(*) AS count,
+      ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM checkins c JOIN guests g ON g.id = c.guest_id WHERE g.event_id = ?), 1) AS percent
+    FROM checkins c JOIN guests g ON g.id = c.guest_id
+    WHERE g.event_id = ? AND checked_in_at IS NOT NULL
+    GROUP BY strftime('%H:%M', checked_in_at)
+    ORDER BY count DESC LIMIT 1
+  `).get(req.params.id, req.params.id);
+  
+  // Check-in by activity
+  const byActivity = db.prepare(`
+    SELECT a.name, COUNT(*) AS checked_in,
+      (SELECT COUNT(*) FROM guests WHERE event_id = ?) AS total
+    FROM checkins c JOIN activities a ON a.id = c.activity_id JOIN guests g ON g.id = c.guest_id
+    WHERE g.event_id = ?
+    GROUP BY a.id, a.name
+    ORDER BY checked_in DESC
+  `).all(req.params.id, req.params.id);
+  
+  // Staff performance
+  const staffPerf = db.prepare(`
+    SELECT u.name, COUNT(*) AS checkins,
+      strftime('%H:%M', MIN(c.checked_in_at)) AS first_checkin,
+      strftime('%H:%M', MAX(c.checked_in_at)) AS last_checkin
+    FROM checkins c JOIN users u ON u.id = c.staff_id JOIN guests g ON g.id = c.guest_id
+    WHERE g.event_id = ?
+    GROUP BY u.id, u.name
+    ORDER BY checkins DESC
+  `).all(req.params.id);
+  
+  // Process staff performance
+  const staffPerformance = staffPerf.map(s => {
+    const duration = s.last_checkin && s.first_checkin 
+      ? (new Date(s.last_checkin) - new Date(s.first_checkin)) / 3600000 // hours
+      : 1;
+    return {
+      name: s.name,
+      checkins: s.checkins,
+      peak_time: s.last_checkin ? new Date(s.last_checkin).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : 'N/A',
+      avg_per_hour: Math.round(s.checkins / Math.max(duration, 1))
+    };
+  });
+  
+  // Incident summary
+  const incidents = db.prepare(`
+    SELECT 
+      COUNT(*) AS total,
+      COUNT(CASE WHEN severity = 'CRITICAL' THEN 1 END) AS critical,
+      COUNT(CASE WHEN status = 'RESOLVED' THEN 1 END) AS resolved,
+      AVG(CASE WHEN resolved_at IS NOT NULL 
+        THEN (julianday(resolved_at) - julianday(created_at)) * 24 * 60 
+        END) AS avg_resolution_time
+    FROM incidents WHERE event_id = ?
+  `).get(req.params.id);
+  
+  // Attendance heatmap (24-hour check-in density)
+  const hourlyCheckins = db.prepare(`
+    SELECT 
+      CAST(strftime('%H', checked_in_at) AS INTEGER) AS hour,
+      COUNT(*) AS value
+    FROM checkins c JOIN guests g ON g.id = c.guest_id
+    WHERE g.event_id = ? AND checked_in_at IS NOT NULL
+    GROUP BY hour
+  `).all(req.params.id);
+  
+  const heatmap = Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    value: hourlyCheckins.find(h => h.hour === i)?.value || 0
+  }));
+  
+  res.json({
+    rsvp_summary: rsvp,
+    attendance_timeline: timeline,
+    peak_arrival: peak,
+    checkin_by_activity: byActivity,
+    staff_performance: staffPerformance,
+    incident_summary: {
+      total: incidents.total || 0,
+      critical: incidents.critical || 0,
+      resolved: incidents.resolved || 0,
+      avg_resolution_time: incidents.avg_resolution_time ? `${Math.round(incidents.avg_resolution_time)}m` : 'N/A'
+    },
+    heatmap
+  });
+});
+
+// Helper function to get analytics data (refactored for export/comparison)
+function getAnalyticsData(eventId) {
+  const rsvp = db.prepare(`
+    SELECT 
+      COUNT(CASE WHEN rsvp_status = 'confirmed' THEN 1 END) AS confirmed,
+      COUNT(CASE WHEN rsvp_status = 'declined' THEN 1 END) AS declined,
+      COUNT(CASE WHEN rsvp_status = 'no_response' THEN 1 END) AS no_response,
+      ROUND(COUNT(CASE WHEN rsvp_status != 'no_response' THEN 1 END) * 100.0 / COUNT(*), 1) AS response_rate
+    FROM guests WHERE event_id = ?
+  `).get(eventId);
+  
+  const incidents = db.prepare(`
+    SELECT 
+      COUNT(*) AS total,
+      COUNT(CASE WHEN severity = 'CRITICAL' THEN 1 END) AS critical,
+      COUNT(CASE WHEN status = 'RESOLVED' THEN 1 END) AS resolved,
+      AVG(CASE WHEN resolved_at IS NOT NULL 
+        THEN (julianday(resolved_at) - julianday(created_at)) * 24 * 60 
+        END) AS avg_resolution_time
+    FROM incidents WHERE event_id = ?
+  `).get(eventId);
+  
+  return {
+    rsvp_summary: rsvp,
+    incident_summary: {
+      total: incidents.total || 0,
+      critical: incidents.critical || 0,
+      resolved: incidents.resolved || 0,
+      avg_resolution_time: incidents.avg_resolution_time ? `${Math.round(incidents.avg_resolution_time)}m` : 'N/A'
+    }
+  };
+}
+
+// Event finances (revenue/expense tracking)
+router.get('/:id/finances', requireEventAccess(), (req, res) => {
+  const finances = db.prepare(`
+    SELECT ef.*, u.name AS recorded_by_name
+    FROM event_finances ef
+    LEFT JOIN users u ON u.id = ef.recorded_by
+    WHERE ef.event_id = ?
+    ORDER BY ef.recorded_at DESC
+  `).all(req.params.id);
+  
+  const summary = db.prepare(`
+    SELECT 
+      category,
+      SUM(amount) AS total
+    FROM event_finances
+    WHERE event_id = ?
+    GROUP BY category
+  `).all(req.params.id);
+  
+  const revenue = summary.find(s => s.category === 'revenue')?.total || 0;
+  const expenses = summary.find(s => s.category === 'expense')?.total || 0;
+  
+  res.json({
+    finances,
+    summary: {
+      revenue,
+      expenses,
+      profit: revenue - expenses,
+      margin: revenue > 0 ? ((revenue - expenses) / revenue * 100).toFixed(1) : 0
+    }
+  });
+});
+
+router.post('/:id/finances', requireEventAccess(), (req, res) => {
+  const { category, subcategory, description, amount, currency, notes } = req.body;
+  if (!category || !description || !amount) {
+    return res.status(400).json({ error: 'category, description, and amount are required' });
+  }
+  
+  const result = db.prepare(`
+    INSERT INTO event_finances (event_id, category, subcategory, description, amount, currency, recorded_by, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(req.params.id, category, subcategory, description, amount, currency || 'USD', req.user.id, notes);
+  
+  const finance = db.prepare('SELECT * FROM event_finances WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json(finance);
+});
+
+router.delete('/:id/finances/:financeId', requireEventAccess(), (req, res) => {
+  const finance = db.prepare('SELECT * FROM event_finances WHERE id = ? AND event_id = ?')
+    .get(req.params.financeId, req.params.id);
+  if (!finance) return res.status(404).json({ error: 'Finance record not found' });
+  
+  db.prepare('DELETE FROM event_finances WHERE id = ?').run(req.params.financeId);
+  res.json({ ok: true });
+});
+
+// Budget management
+router.get('/:id/budgets', requireEventAccess(), (req, res) => {
+  const budgets = db.prepare(`
+    SELECT 
+      eb.*,
+      (SELECT COALESCE(SUM(amount), 0) FROM event_finances 
+       WHERE event_id = eb.event_id AND category = 'expense' 
+       AND (subcategory = eb.subcategory OR eb.subcategory IS NULL)) AS spent
+    FROM event_budgets eb WHERE event_id = ?
+  `).all(req.params.id);
+  res.json(budgets);
+});
+
+router.post('/:id/budgets', requireEventAccess(), (req, res) => {
+  const { category, subcategory, budget_amount, currency } = req.body;
+  if (!category || !budget_amount) {
+    return res.status(400).json({ error: 'category and budget_amount are required' });
+  }
+  const result = db.prepare(`
+    INSERT INTO event_budgets (event_id, category, subcategory, budget_amount, currency, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.params.id, category, subcategory || null, budget_amount, currency || 'USD', req.user.id);
+  res.status(201).json(db.prepare('SELECT * FROM event_budgets WHERE id = ?').get(result.lastInsertRowid));
+});
+
+// Expense approval workflow
+router.put('/:id/finances/:financeId/approve', requireEventAccess(), (req, res) => {
+  db.prepare(`
+    UPDATE event_finances 
+    SET status = 'APPROVED', approved_by = ?, approved_at = datetime('now')
+    WHERE id = ? AND event_id = ?
+  `).run(req.user.id, req.params.financeId, req.params.id);
+  res.json({ ok: true });
+});
+
+router.put('/:id/finances/:financeId/reject', requireEventAccess(), (req, res) => {
+  db.prepare(`
+    UPDATE event_finances 
+    SET status = 'REJECTED'
+    WHERE id = ? AND event_id = ?
+  `).run(req.params.financeId, req.params.id);
+  res.json({ ok: true });
+});
+
+// Export to CSV
+router.get('/:id/finances/export', requireEventAccess(), (req, res) => {
+  const finances = db.prepare(`
+    SELECT ef.*, u.name AS recorded_by_name
+    FROM event_finances ef
+    LEFT JOIN users u ON u.id = ef.recorded_by
+    WHERE ef.event_id = ?
+    ORDER BY ef.recorded_at DESC
+  `).all(req.params.id);
+  
+  const headers = ['id', 'category', 'subcategory', 'description', 'amount', 'currency', 'status', 'recorded_at', 'recorded_by_name'];
+  const csv = [
+    headers.join(','),
+    ...finances.map(f => headers.map(h => JSON.stringify(f[h] || '')).join(','))
+  ].join('\n');
+  
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="finances-${req.params.id}.csv"`);
+  res.send(csv);
+});
+
+// Analytics export and comparison
+router.get('/:id/analytics/export', requireEventAccess(), (req, res) => {
+  const analytics = getAnalyticsData(req.params.id);
+  const csv = [
+    'Metric,Value',
+    'RSVP Confirmed,' + (analytics.rsvp_summary?.confirmed || 0),
+    'RSVP Declined,' + (analytics.rsvp_summary?.declined || 0),
+    'RSVP No Response,' + (analytics.rsvp_summary?.no_response || 0),
+    'Response Rate %,' + (analytics.rsvp_summary?.response_rate || 0),
+    'Total Incidents,' + (analytics.incident_summary?.total || 0),
+    'Critical Incidents,' + (analytics.incident_summary?.critical || 0),
+    'Resolved Incidents,' + (analytics.incident_summary?.resolved || 0),
+    'Avg Resolution Time,' + (analytics.incident_summary?.avg_resolution_time || 'N/A')
+  ].join('\n');
+  
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="analytics-${req.params.id}.csv"`);
+  res.send(csv);
+});
+
+router.get('/compare', requireAuth, (req, res) => {
+  const { event_ids } = req.query;
+  if (!event_ids) return res.status(400).json({ error: 'event_ids query parameter is required' });
+  
+  const events = event_ids.split(',');
+  const comparison = events.map(eid => ({
+    event_id: eid,
+    analytics: getAnalyticsData(eid)
+  }));
+  res.json(comparison);
 });
 
 export default router;
