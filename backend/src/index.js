@@ -57,8 +57,11 @@ app.use(cors({
     if (!origin) return cb(null, true);
     const frontend = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
     if (frontend && origin === frontend) return cb(null, true);
-    // Allow Cloudflare Workers deployment
+    // Allow Cloudflare Workers deployments
     if (origin === 'https://eventcheck-frontend.sudokodes-477.workers.dev') {
+      return cb(null, true);
+    }
+    if (origin === 'https://eventchuck.wendykodes.workers.dev') {
       return cb(null, true);
     }
     // Allow specific ngrok tunnel for development
