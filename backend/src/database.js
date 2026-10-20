@@ -1332,6 +1332,10 @@ export function initializeDatabase() {
   // requires an explicit INITIAL_ADMIN_PIN (consumed here, never logged).
   // Local development keeps the convenient 1234 default.
   const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+  console.log(`[DB INIT] Admin user count: ${adminCount}`);
+  console.log(`[DB INIT] NODE_ENV: ${process.env.NODE_ENV}`);
+  console.log(`[DB INIT] INITIAL_ADMIN_PIN set: ${!!process.env.INITIAL_ADMIN_PIN}`);
+  
   if (adminCount === 0) {
     if (process.env.NODE_ENV === 'production') {
       const initialPin = (process.env.INITIAL_ADMIN_PIN || '').trim();
@@ -1367,7 +1371,11 @@ export function initializeDatabase() {
         const newPinHash = bcrypt.hashSync(initialPin, 10);
         db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(newPinHash, admin.id);
         console.log('Admin PIN synced successfully.');
+      } else {
+        console.log('[DB INIT] Admin count > 0 but no admin found in query!');
       }
+    } else {
+      console.log('[DB INIT] Skipping PIN sync - not production or INITIAL_ADMIN_PIN not set');
     }
   }
 

@@ -60,6 +60,7 @@ router.get('/registration-request/:id/status', (req, res) => {
 
 router.post('/login', loginRateLimit, (req, res) => {
   const rawPin = req.body.pin;
+  console.log(`[LOGIN] PIN received: ${rawPin ? `length=${rawPin.length}` : 'missing'}`);
   if (!rawPin) {
     return res.status(400).json({ error: 'PIN is required' });
   }
@@ -69,6 +70,7 @@ router.post('/login', loginRateLimit, (req, res) => {
   }
 
   let users = db.prepare('SELECT * FROM users ORDER BY id ASC').all();
+  console.log(`[LOGIN] Users in database: ${users.length}`);
   let matched = null;
   for (const user of users) {
     if (bcrypt.compareSync(pin, user.pin_hash)) {
@@ -78,6 +80,7 @@ router.post('/login', loginRateLimit, (req, res) => {
   }
 
   if (!matched) {
+    console.log(`[LOGIN] No match found for provided PIN`);
     try {
       db.prepare(`
         INSERT INTO audit_log (actor_id, action, entity_type, metadata_json, ip)
@@ -86,6 +89,7 @@ router.post('/login', loginRateLimit, (req, res) => {
     } catch {}
     return res.status(401).json({ error: 'Invalid PIN' });
   }
+  console.log(`[LOGIN] Matched user: ${matched.name} (ID: ${matched.id}, role: ${matched.role})`);
   if (matched.status === 'inactive' || matched.status === 'suspended') {
     return res.status(403).json({ error: `Account ${matched.status}. Contact an administrator.` });
   }
