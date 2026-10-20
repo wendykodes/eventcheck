@@ -1335,6 +1335,7 @@ export function initializeDatabase() {
   if (adminCount === 0) {
     if (process.env.NODE_ENV === 'production') {
       const initialPin = (process.env.INITIAL_ADMIN_PIN || '').trim();
+      console.log(`[ADMIN CREATE] INITIAL_ADMIN_PIN length: ${initialPin.length}`);
       if (!initialPin) {
         console.error('FATAL: No admin user exists and INITIAL_ADMIN_PIN is not set. Refusing to create a default credential in production.');
         process.exit(1);
