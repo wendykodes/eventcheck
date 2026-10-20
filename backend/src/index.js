@@ -118,6 +118,25 @@ app.get('/api/ready', (req, res) => {
   }
 });
 
+// Debug endpoint for checking admin status (public for debugging)
+app.get('/api/debug-admin', (req, res) => {
+  try {
+    const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+    const admin = db.prepare("SELECT id, name, status FROM users WHERE role = 'admin' LIMIT 1").get();
+    const allUsers = db.prepare("SELECT id, name, role, status FROM users").all();
+    res.json({
+      admin_exists: adminCount > 0,
+      admin: admin ? { id: admin.id, name: admin.name, status: admin.status } : null,
+      has_initial_pin: !!process.env.INITIAL_ADMIN_PIN,
+      node_env: process.env.NODE_ENV,
+      total_users: allUsers.length,
+      users: allUsers.map(u => ({ id: u.id, name: u.name, role: u.role, status: u.status }))
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/guests', guestsRoutes);
