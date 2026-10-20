@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import db, { dbPath } from '../database.js';
 import jwt from '../jwt.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { loginRateLimit } from '../middleware/rateLimit.js';
 import { formatUgandanPhoneNumber } from '../phoneUtils.js';
 
 const router = Router();
@@ -43,6 +44,18 @@ router.get('/debug-admin-status', requireAuth, requireAdmin, (req, res) => {
   });
 });
 
+// Public debug endpoint to check if admin exists (no auth required for debugging)
+router.get('/debug-admin-exists', (req, res) => {
+  const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+  const admin = db.prepare("SELECT id, name, status FROM users WHERE role = 'admin' LIMIT 1").get();
+  res.json({
+    admin_exists: adminCount > 0,
+    admin: admin ? { id: admin.id, name: admin.name, status: admin.status } : null,
+    has_initial_pin: !!process.env.INITIAL_ADMIN_PIN,
+    node_env: process.env.NODE_ENV
+  });
+});
+
 router.get('/debug-db', requireAuth, requireAdmin, (req, res) => {
   res.json({
     dbPath,
@@ -57,7 +70,7 @@ router.get('/registration-request/:id/status', (req, res) => {
   res.json({ status: req_.status, created_at: req_.created_at });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', loginRateLimit, (req, res) => {
   const rawPin = req.body.pin;
   if (!rawPin) {
     return res.status(400).json({ error: 'PIN is required' });
