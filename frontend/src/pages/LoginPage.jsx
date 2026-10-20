@@ -14,6 +14,9 @@ export default function LoginPage({ onLogin }) {
   const [confirmPin, setConfirmPin] = useState(['', '', '', '', '', '']);
   const [confirmActiveIdx, setConfirmActiveIdx] = useState(0);
   const [setupStep, setSetupStep] = useState(0);
+  const [showAdminSetup, setShowAdminSetup] = useState(false);
+  const [adminSetupPin, setAdminSetupPin] = useState('');
+  const [loginAttempts, setLoginAttempts] = useState(0);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -40,11 +43,45 @@ export default function LoginPage({ onLogin }) {
       onLogin(data.token, data.user);
       toast.success(`Welcome, ${data.user.name}!`);
     } catch (err) {
-      toast.error(err.message);
+      setLoginAttempts(prev => {
+        const newAttempts = prev + 1;
+        if (newAttempts >= 2) {
+          setShowAdminSetup(true);
+          toast.error('Login failed. Try setting up the admin PIN first.');
+        } else {
+          toast.error(err.message);
+        }
+        return newAttempts;
+      });
       setPin(['', '', '', '', '', '']);
       setActiveIdx(0);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAdminSetup = async (e) => {
+    e.preventDefault();
+    const pinStr = adminSetupPin.trim();
+    if (pinStr.length < 4 || pinStr.length > 6 || !/^\d+$/.test(pinStr)) {
+      toast.error('Enter a 4-6 digit PIN');
+      return;
+    }
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/auth/setup-admin-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_pin: pinStr })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Admin PIN set! Now try logging in.');
+        setShowAdminSetup(false);
+        setAdminSetupPin('');
+        setLoginAttempts(0);
+      }
+    } catch (err) {
+      toast.error('Failed to set admin PIN');
     }
   };
 
@@ -91,8 +128,8 @@ export default function LoginPage({ onLogin }) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                 </svg>
               </div>
-              <h1 className="text-[28px] font-bold tracking-tight text-[#1d1d1f] dark:text-white">Set Up PIN</h1>
-              <p className="text-[15px] text-[#86868b] mt-1.5">First time logging in. Choose a new PIN.</p>
+              <h1 className="text-[28px] font-bold tracking-tight text-[#1d1d1f] dark:text-white">Make Your PIN</h1>
+              <p className="text-[15px] text-[#86868b] mt-1.5">First time here. Pick a secret code.</p>
             </div>
 
             <form onSubmit={e => { e.preventDefault(); setSetupStep(1); }}>
@@ -158,8 +195,8 @@ export default function LoginPage({ onLogin }) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               </svg>
             </div>
-            <h1 className="text-[28px] font-bold tracking-tight text-[#1d1d1f] dark:text-white">Confirm PIN</h1>
-            <p className="text-[15px] text-[#86868b] mt-1.5">Enter it again to confirm.</p>
+            <h1 className="text-[28px] font-bold tracking-tight text-[#1d1d1f] dark:text-white">Check Your PIN</h1>
+            <p className="text-[15px] text-[#86868b] mt-1.5">Type it again to make sure.</p>
           </div>
 
           <form onSubmit={e => { e.preventDefault(); handleSetupPin(); }}>
@@ -234,8 +271,8 @@ export default function LoginPage({ onLogin }) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h1 className="text-[28px] font-bold tracking-tight text-[#1d1d1f] dark:text-white">Event Check-In</h1>
-          <p className="text-[15px] text-[#86868b] mt-1.5">Enter your staff PIN</p>
+          <h1 className="text-[28px] font-bold tracking-tight text-[#1d1d1f] dark:text-white">Welcome Back!</h1>
+          <p className="text-[15px] text-[#86868b] mt-1.5">Type your secret code</p>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -286,6 +323,34 @@ export default function LoginPage({ onLogin }) {
             </button>
           </div>
         </form>
+
+        {showAdminSetup && (
+          <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
+            <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-3">Database Reset Detected</h3>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">The database was reset after deployment. Set a new admin PIN:</p>
+            <form onSubmit={handleAdminSetup} className="space-y-3">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={adminSetupPin}
+                onChange={(e) => setAdminSetupPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-[#1c1c1e] text-sm"
+                placeholder="Enter 4-6 digit PIN"
+              />
+              <div className="flex gap-2">
+                <button type="submit" className="flex-1 h-10 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium">
+                  Set PIN
+                </button>
+                <button type="button" onClick={() => { setShowAdminSetup(false); setLoginAttempts(0); }}
+                  className="flex-1 h-10 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] text-sm font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
         <p className="text-center text-xs text-[#86868b] mt-6">PIN-only authentication</p>
         <Link to="/register" className="block text-center text-sm text-primary-500 hover:text-primary-600 mt-3 font-medium">
