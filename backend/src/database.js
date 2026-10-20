@@ -1361,13 +1361,19 @@ export function initializeDatabase() {
     // Admin exists - sync PIN with INITIAL_ADMIN_PIN if set in production
     if (process.env.NODE_ENV === 'production' && process.env.INITIAL_ADMIN_PIN) {
       const initialPin = process.env.INITIAL_ADMIN_PIN.trim();
+      console.log(`[PIN SYNC] INITIAL_ADMIN_PIN is set (${initialPin.length} chars)`);
       const admin = db.prepare("SELECT id, pin_hash FROM users WHERE role = 'admin' LIMIT 1").get();
       if (admin) {
-        console.log('Syncing admin PIN with INITIAL_ADMIN_PIN...');
+        console.log(`[PIN SYNC] Admin user found (ID: ${admin.id})`);
+        console.log(`[PIN SYNC] Updating admin PIN hash...`);
         const newPinHash = bcrypt.hashSync(initialPin, 10);
         db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(newPinHash, admin.id);
-        console.log('Admin PIN synced successfully.');
+        console.log('[PIN SYNC] Admin PIN synced successfully.');
+      } else {
+        console.log('[PIN SYNC] No admin user found to sync!');
       }
+    } else {
+      console.log(`[PIN SYNC] Skipping sync - NODE_ENV: ${process.env.NODE_ENV}, INITIAL_ADMIN_PIN set: ${!!process.env.INITIAL_ADMIN_PIN}`);
     }
   }
 
