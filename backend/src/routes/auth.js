@@ -31,6 +31,33 @@ function isPinTaken(pin) {
   return false;
 }
 
+// Admin PIN setup endpoint (for first-time setup after database wipe)
+router.post('/setup-admin-pin', loginRateLimit, (req, res) => {
+  const { new_pin } = req.body;
+  
+  if (!new_pin || !/^\d{4,6}$/.test(new_pin)) {
+    return res.status(400).json({ error: 'PIN must be 4-6 digits' });
+  }
+  
+  const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
+  if (!admin) {
+    // Create admin if doesn't exist
+    const adminPin = bcrypt.hashSync(new_pin, 10);
+    db.prepare(`
+      INSERT INTO users (name, pin_hash, role, status)
+      VALUES ('Admin', ?, 'admin', 'active')
+    `).run(adminPin);
+    console.log(`[ADMIN SETUP] Created admin with PIN`);
+  } else {
+    // Update existing admin
+    const newPinHash = bcrypt.hashSync(new_pin, 10);
+    db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(newPinHash, admin.id);
+    console.log(`[ADMIN SETUP] Updated admin PIN`);
+  }
+  
+  res.json({ success: true, message: 'Admin PIN set successfully' });
+});
+
 router.get('/debug-admin-status', requireAuth, requireAdmin, (req, res) => {
   const users = db.prepare('SELECT id, name, role, status FROM users').all();
   res.json({
