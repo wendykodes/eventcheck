@@ -90,6 +90,7 @@ router.post('/login', loginRateLimit, (req, res) => {
   }
 
   if (!matched) {
+    console.log(`[LOGIN FAILED] PIN "${pin}" did not match any of ${users.length} users`);
     try {
       db.prepare(`
         INSERT INTO audit_log (actor_id, action, entity_type, metadata_json, ip)
@@ -101,6 +102,7 @@ router.post('/login', loginRateLimit, (req, res) => {
   if (matched.status === 'inactive' || matched.status === 'suspended') {
     return res.status(403).json({ error: `Account ${matched.status}. Contact an administrator.` });
   }
+  console.log(`[LOGIN SUCCESS] User "${matched.name}" (ID: ${matched.id}) logged in`);
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(matched.id);
   const events = matched.role === 'admin'
     ? db.prepare('SELECT id, name FROM events ORDER BY date DESC').all()
