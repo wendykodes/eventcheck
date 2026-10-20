@@ -1,0 +1,13 @@
+{
+  "name": "EventCheck - Event Operating System",
+  "short_name": "EventCheck",
+  "description": "Premium event management and check-in system",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "categories": ["business", "productivity", "events"],
+  "screenshots": []
+}
