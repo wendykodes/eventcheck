@@ -1,11 +1,12 @@
-// Serves the Vite SPA and proxies /api/* to the Express backend
-// (same role the netlify.toml redirects play on Netlify).
+// Serves the Vite SPA and proxies /api/* to the Express backend on Render.
+// BACKEND_URL may be overridden in the Cloudflare Worker environment; the
+// default is the production Render backend.
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
-      const backend = (env.BACKEND_URL || 'https://eventcheck-89g7.onrender.com').replace(/\/$/, '');
+      const backend = (env.BACKEND_URL || 'https://eventcheck-1-y59g.onrender.com').replace(/\/$/, '');
       const target = new URL(url.pathname + url.search, backend + '/');
       const headers = new Headers(request.headers);
       headers.set('host', new URL(backend).host);
