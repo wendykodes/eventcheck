@@ -31,6 +31,20 @@ function isPinTaken(pin) {
   return false;
 }
 
+// Temporary diagnostic endpoint to check admin setup
+router.get('/health', (req, res) => {
+  const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+  const admin = db.prepare("SELECT id, name, status FROM users WHERE role = 'admin' LIMIT 1").get();
+  res.json({
+    admin_exists: adminCount > 0,
+    admin_count: adminCount,
+    admin: admin ? { id: admin.id, name: admin.name, status: admin.status } : null,
+    node_env: process.env.NODE_ENV,
+    initial_pin_set: !!process.env.INITIAL_ADMIN_PIN,
+    expected_pin_length: process.env.INITIAL_ADMIN_PIN ? process.env.INITIAL_ADMIN_PIN.length : 0
+  });
+});
+
 router.get('/debug-admin-status', requireAuth, requireAdmin, (req, res) => {
   const users = db.prepare('SELECT id, name, role, status FROM users').all();
   res.json({
